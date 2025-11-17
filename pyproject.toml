@@ -3,6 +3,6 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lnpm-mcp"
+name = "lnmp-mcp"
 version = "0.1.0"
 description = "LNMP MCP helper package"
