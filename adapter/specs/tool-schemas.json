@@ -1,0 +1,26 @@
+{
+  "lnmp.parse": {
+    "input": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] },
+    "output": { "type": "object", "properties": { "record": { "type": "object" } } }
+  },
+  "lnmp.encode": {
+    "input": { "type": "object", "properties": { "record": { "type": "object" } }, "required": ["record"] },
+    "output": { "type": "object", "properties": { "text": { "type": "string" } } }
+  },
+  "lnmp.decodeBinary": {
+    "input": { "type": "object", "properties": { "binary": { "type": "string" } }, "required": ["binary"] },
+    "output": { "type": "object", "properties": { "text": { "type": "string" } } }
+  },
+  "lnmp.encodeBinary": {
+    "input": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] },
+    "output": { "type": "object", "properties": { "binary": { "type": "string" } } }
+  },
+  "lnmp.schema.describe": {
+    "input": { "type": "object", "properties": { "mode": { "type": "string" } } },
+    "output": { "type": "object", "properties": { "fields": { "type": "object" } } }
+  },
+  "lnmp.debug.explain": {
+    "input": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] },
+    "output": { "type": "object", "properties": { "explanation": { "type": "string" } } }
+  }
+}

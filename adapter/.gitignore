@@ -1,0 +1,12 @@
+node_modules/
+dist/
+pkg/
+*.tgz
+*.log
+*.lock
+coverage/
+**/target
+
+# local env files
+.env
+.env.example
