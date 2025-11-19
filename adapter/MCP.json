@@ -7,7 +7,8 @@
     "lnmp.decodeBinary",
     "lnmp.encodeBinary",
     "lnmp.schema.describe",
-    "lnmp.debug.explain"
+    "lnmp.debug.explain",
+    "lnmp.sanitize"
   ],
   "description": "LNMP protocol tools for AI agents via MCP",
   "author": "lnmplang"

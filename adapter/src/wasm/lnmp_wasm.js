@@ -182,22 +182,6 @@ function takeFromExternrefTable0(idx) {
     return value;
 }
 /**
- * @param {string} text
- * @returns {Uint8Array}
- */
-exports.encode_binary = function(text) {
-    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.encode_binary(ptr0, len0);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v2;
-};
-
-/**
  * @param {string} _mode
  * @returns {any}
  */
@@ -209,31 +193,6 @@ exports.schema_describe = function(_mode) {
         throw takeFromExternrefTable0(ret[1]);
     }
     return takeFromExternrefTable0(ret[0]);
-};
-
-/**
- * @param {string} text
- * @returns {string}
- */
-exports.debug_explain = function(text) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.debug_explain(ptr0, len0);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
-    }
 };
 
 /**
@@ -292,12 +251,98 @@ exports.decode_binary = function(bin) {
 
 /**
  * @param {string} text
+ * @returns {string}
+ */
+exports.debug_explain = function(text) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.debug_explain(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+};
+
+/**
+ * @param {string} text
+ * @returns {Uint8Array}
+ */
+exports.encode_binary_lenient = function(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.encode_binary_lenient(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+};
+
+/**
+ * @param {string} text
  * @returns {any}
  */
 exports.parse = function(text) {
     const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.parse(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+/**
+ * @param {string} text
+ * @param {any | null} [options]
+ * @returns {any}
+ */
+exports.sanitize = function(text, options) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.sanitize(ptr0, len0, isLikeNone(options) ? 0 : addToExternrefTable0(options));
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+/**
+ * @param {string} text
+ * @returns {Uint8Array}
+ */
+exports.encode_binary = function(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.encode_binary(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+};
+
+/**
+ * @param {string} text
+ * @returns {any}
+ */
+exports.parse_lenient = function(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.parse_lenient(ptr0, len0);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -353,6 +398,11 @@ exports.__wbg___wbindgen_is_function_ee8a6c5833c90377 = function(arg0) {
     return ret;
 };
 
+exports.__wbg___wbindgen_is_null_5e69f72e906cc57c = function(arg0) {
+    const ret = arg0 === null;
+    return ret;
+};
+
 exports.__wbg___wbindgen_is_object_c818261d21f283a4 = function(arg0) {
     const val = arg0;
     const ret = typeof(val) === 'object' && val !== null;
@@ -361,6 +411,11 @@ exports.__wbg___wbindgen_is_object_c818261d21f283a4 = function(arg0) {
 
 exports.__wbg___wbindgen_is_string_fbb76cb2940daafd = function(arg0) {
     const ret = typeof(arg0) === 'string';
+    return ret;
+};
+
+exports.__wbg___wbindgen_is_undefined_2d472862bd29a478 = function(arg0) {
+    const ret = arg0 === undefined;
     return ret;
 };
 
@@ -418,6 +473,11 @@ exports.__wbg_get_efcb449f58ec27c2 = function() { return handleError(function (a
     const ret = Reflect.get(arg0, arg1);
     return ret;
 }, arguments) };
+
+exports.__wbg_get_with_ref_key_1dc361bd10053bfe = function(arg0, arg1) {
+    const ret = arg0[arg1];
+    return ret;
+};
 
 exports.__wbg_instanceof_ArrayBuffer_70beb1189ca63b38 = function(arg0) {
     let result;
@@ -562,6 +622,11 @@ exports.__wbindgen_init_externref_table = function() {
     table.set(offset + 2, true);
     table.set(offset + 3, false);
     ;
+};
+
+exports.__wbindgen_object_is_undefined = function(arg0) {
+    const ret = arg0 === undefined;
+    return ret;
 };
 
 const wasmPath = `${__dirname}/lnmp_wasm_bg.wasm`;

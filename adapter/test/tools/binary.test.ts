@@ -16,4 +16,12 @@ describe('lnmp binary', () => {
   test('decodeBinary handles invalid base64 gracefully', async () => {
     expect(() => lnmp.decodeBinary('not-a-base64')).toThrow();
   });
+
+  test('encodeBinary leniently repairs quotes and succeeds', async () => {
+    const messy = 'F1=1\nF2=Hello "world"';
+    const bin = lnmp.encodeBinary(messy, { mode: 'lenient' });
+    const text = lnmp.decodeBinary(Buffer.from(bin).toString('base64'));
+    expect(text).toContain('F1=');
+    expect(text).toMatch(/F2=/);
+  });
 });

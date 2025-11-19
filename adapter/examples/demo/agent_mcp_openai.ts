@@ -17,20 +17,28 @@ async function post(base: string, path: string, body: any) {
 }
 
 async function openaiQuery(system: string, user: string) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error('OPENAI_API_KEY not set');
+  const key = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+  if (!key) return null;
   const url = process.env.OPENAI_API_URL || 'https://api.openai.com/v1/chat/completions';
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   const v = process.env.VERBOSE === 'true';
   if (v) console.log(`Using OpenAI model: ${model}`);
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: 512, temperature: 0.3 }),
-  });
-  if (!res.ok) throw new Error(`OpenAI request failed: ${res.status} - ${await res.text()}`);
-  const data = await res.json();
-  return data.choices[0].message.content;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: 512, temperature: 0.3 }),
+    });
+    if (!res.ok) {
+      console.warn('OpenAI request failed:', await res.text());
+      return null;
+    }
+    const data = await res.json();
+    return data.choices[0].message.content;
+  } catch (err) {
+    console.warn('OpenAI call error:', String(err));
+    return null;
+  }
 }
 
 function extractJSON(msgContent: string): any {
@@ -81,23 +89,18 @@ async function run() {
     'Assistant (turn 6): { "action": "done", "result": { "is_active": true, "user_id": 14532 } }'
   ].join('\n');
   let context: any = { text: lnmpText, messages: [] };
-    let iteration = 0;
-    const maxCorrections = 3;
+  let iteration = 0;
+  const maxCorrections = 3;
   while (iteration < 10) {
     iteration++;
     const userPrompt = `Context: ${JSON.stringify(context)}\nDecide next tool call in the mandatory pipeline (schema->parse->explain->encbin->decbin->done). Return a single JSON object { action, args }`;
     const response = await openaiQuery(system, userPrompt);
     console.log('[LLM] Response:', response);
-    let parsed: any = extractJSON(response);
+    let parsed: any = extractJSON(response || '');
     if (!parsed) {
       // Try direct JSON parsing if the response might already be JSON
-      try { parsed = JSON.parse(response); } catch (err) { /* fallthrough */ }
+      try { parsed = response ? JSON.parse(response) : null; } catch (err) { /* fallthrough */ }
     }
-    if (!parsed) {
-      console.warn('Failed to extract JSON action from LLM response; content:', response);
-      break;
-    }
-    if (!parsed || !parsed.action) break;
     // Determine next required pipeline action
     function nextRequiredAction(ctx: any) {
       if (!ctx.schema) return 'schema';
@@ -108,6 +111,14 @@ async function run() {
       return 'done';
     }
     const required = nextRequiredAction(context);
+    if (!parsed || !parsed.action) {
+      parsed = { action: required, args: {} };
+    }
+    if (!parsed) {
+      console.warn('Failed to extract JSON action from LLM response; content:', response);
+      break;
+    }
+    if (!parsed || !parsed.action) break;
     if (parsed.action !== required) {
       // If LLM returned a different step, ask it to produce the required step instead.
       console.warn(`[Agent] LLM selected '${parsed.action}', but next required action is '${required}'. Asking for '${required}'`);
@@ -120,7 +131,7 @@ async function run() {
         corrAttempts++;
         correctionResponse = await openaiQuery(system, correctionPrompt);
         console.log('[LLM correction] Response:', correctionResponse);
-        correction = extractJSON(correctionResponse) || (() => { try { return JSON.parse(correctionResponse); } catch { return null; } })();
+        correction = extractJSON(correctionResponse || '') || (() => { try { return correctionResponse ? JSON.parse(correctionResponse) : null; } catch { return null; } })();
       }
       if (!correction || !correction.action) {
         console.warn('[Agent] Could not recover a valid correction from LLM. Breaking.');

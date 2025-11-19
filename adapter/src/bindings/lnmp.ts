@@ -7,8 +7,22 @@
 import fs from "fs";
 import path from "path";
 
+export type SanitizeLevel = "minimal" | "normal" | "aggressive";
+export type SanitizeOptions = {
+  level?: SanitizeLevel;
+  autoQuoteStrings?: boolean;
+  autoEscapeQuotes?: boolean;
+  normalizeBooleans?: boolean;
+  normalizeNumbers?: boolean;
+};
+
+export type SanitizeResult = { text: string; changed: boolean; config?: Record<string, any> };
+export type ParseOptions = { mode?: "strict" | "lenient"; allowFallback?: boolean };
+export type EncodeBinaryOptions = { mode?: "strict" | "lenient"; sanitize?: boolean | SanitizeOptions };
+
 // These function placeholders will be replaced when WASM is initialized.
 let _parse: (text: string) => any = (t) => { throw new Error("WASM not initialized"); };
+let _parseLenient: (text: string) => any = (t) => { throw new Error("WASM not initialized"); };
 let _parseFallback = true; // when true, fall back to JS parser on wasm parse errors; when false, surface structured errors
 // Fallback JS parser implementation we can always call on wasm errors
 function fallbackParse(t: string) {
@@ -29,9 +43,11 @@ function fallbackParse(t: string) {
 }
 let _encode: (obj: any) => string = (o) => { throw new Error("WASM not initialized"); };
 let _encodeBinary: (text: string) => Uint8Array = (t) => { throw new Error("WASM not initialized"); };
+let _encodeBinaryLenient: (text: string) => Uint8Array = (t) => { throw new Error("WASM not initialized"); };
 let _decodeBinary: (buf: Uint8Array) => string = (b) => { throw new Error("WASM not initialized"); };
 let _schemaDescribe: (mode: string) => any = (m) => { throw new Error("WASM not initialized"); };
 let _debugExplain: (text: string) => string = (t) => { throw new Error("WASM not initialized"); };
+let _sanitize: (text: string, options?: SanitizeOptions | boolean) => SanitizeResult = (t) => { throw new Error("WASM not initialized"); };
 
 // ready promise and the init function will be used for deterministic init
 let _initPromise: Promise<void> | null = null;
@@ -40,6 +56,40 @@ let _fallbackCount = 0;
 let _wasmErrorCount = 0;
 
 export const LNMP_WASM_ENV_VAR = "LNMP_WASM_PATH";
+
+function fallbackSanitize(text: string, options?: SanitizeOptions | boolean): SanitizeResult {
+  const lines = (text || "").split(/\r?\n/);
+  const opts = normalizeSanitizeOptions(options);
+  let changed = false;
+  const sanitizedLines = lines.map((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) return line;
+    const m = /^F(\d+)=(.*)$/.exec(line);
+    if (!m) return line;
+    const fid = m[1];
+    let value = m[2];
+    const quoted = /^\"[\s\S]*\"$/.test(value);
+    if (!quoted && /["\s]/.test(value)) {
+      const escaped = value.replace(/\\/g, "\\\\").replace(/\"/g, "\\\"");
+      value = `"${escaped}"`;
+      changed = true;
+    }
+    if (!quoted && opts.normalizeBooleans) {
+      if (/^(true|yes)$/i.test(value)) { value = "1"; changed = true; }
+      else if (/^(false|no)$/i.test(value)) { value = "0"; changed = true; }
+    }
+    if (!quoted && opts.normalizeNumbers && /^-?\d+(\.\d+)?$/.test(value)) {
+      const num = Number(value);
+      if (!Number.isNaN(num)) {
+        value = String(num);
+        changed = true;
+      }
+    }
+    return `F${fid}=${value}`;
+  });
+  const sanitizedText = sanitizedLines.filter((l) => l !== "").join("\n");
+  return { text: sanitizedText, changed, config: { ...opts } };
+}
 
 function normalizeWasmJsValue(v: any): any {
   if (v instanceof Map) {
@@ -59,6 +109,24 @@ function recordToJson(rec: any): any {
   if (Array.isArray(rec)) return rec;
   if (typeof rec === "object") return rec;
   return rec;
+}
+
+function normalizeSanitizeOptions(options?: SanitizeOptions | boolean): SanitizeOptions {
+  if (options === undefined) return {};
+  if (typeof options === "boolean") return options ? {} : {};
+  return options || {};
+}
+
+function normalizeSanitizeResult(res: any): SanitizeResult {
+  const val = normalizeWasmJsValue(res);
+  if (val && typeof val === "object" && "text" in (val as any)) {
+    return {
+      text: (val as any).text,
+      changed: !!(val as any).changed,
+      config: (val as any).config,
+    };
+  }
+  return { text: String(res ?? ""), changed: false };
 }
 
 export async function initWasmFromFile(wasmPath: string) {
@@ -158,6 +226,37 @@ export async function initWasm(bytes: ArrayBuffer | Buffer | Uint8Array) {
     _wasmLoaded = true;
   }
 
+  if (exports.parse_lenient) {
+    _parseLenient = (t: string) => {
+      try {
+        const ret = (exports.parse_lenient as any)(t);
+        return recordToJson(ret);
+      } catch (rawErr) {
+        const err = normalizeWasmJsValue(rawErr);
+        if (_parseFallback) {
+          const sanitized = fallbackSanitize(t);
+          _fallbackCount++;
+          try {
+            return _parse(sanitized.text);
+          } catch {
+            return fallbackParse(sanitized.text);
+          }
+        }
+        throw err;
+      }
+    };
+  } else {
+    _parseLenient = (t: string) => {
+      const sanitized = fallbackSanitize(t);
+      try {
+        return _parse(sanitized.text);
+      } catch (err) {
+        if (_parseFallback) return fallbackParse(sanitized.text);
+        throw err;
+      }
+    };
+  }
+
   // As a fallback, if exports are not present, expose minimal JS fallback.
   if (!exports.parse) {
     _parse = (t: string) => {
@@ -200,6 +299,24 @@ export async function initWasm(bytes: ArrayBuffer | Buffer | Uint8Array) {
   _encodeBinary = (text) => {
     try {
       return exports.encode_binary ? (exports.encode_binary as any)(text) : Buffer.from(text, "utf8");
+    } catch (rawErr) {
+      const err = normalizeWasmJsValue(rawErr);
+      if (err && typeof err === 'object' && 'code' in (err as any)) {
+        const wasmErr = err as any;
+        const e = new Error(wasmErr.message || String(wasmErr));
+        (e as any).code = wasmErr.code;
+        (e as any).details = wasmErr.details;
+        throw e;
+      }
+      throw err;
+    }
+  };
+
+  _encodeBinaryLenient = (text) => {
+    try {
+      return exports.encode_binary_lenient
+        ? (exports.encode_binary_lenient as any)(text)
+        : _encodeBinary(fallbackSanitize(text, { autoQuoteStrings: true }).text);
     } catch (rawErr) {
       const err = normalizeWasmJsValue(rawErr);
       if (err && typeof err === 'object' && 'code' in (err as any)) {
@@ -263,6 +380,27 @@ export async function initWasm(bytes: ArrayBuffer | Buffer | Uint8Array) {
       throw err;
     }
   };
+
+  _sanitize = (text, options) => {
+    const normalized = normalizeSanitizeOptions(options);
+    if (exports.sanitize) {
+      try {
+        const res = (exports.sanitize as any)(text, normalized);
+        return normalizeSanitizeResult(res);
+      } catch (rawErr) {
+        const err = normalizeWasmJsValue(rawErr);
+        if (err && typeof err === 'object' && 'code' in (err as any)) {
+          const wasmErr = err as any;
+          const e = new Error(wasmErr.message || String(wasmErr));
+          (e as any).code = wasmErr.code;
+          (e as any).details = wasmErr.details;
+          throw e;
+        }
+        throw err;
+      }
+    }
+    return fallbackSanitize(text, normalized);
+  };
 }
 
 /**
@@ -301,19 +439,19 @@ export async function initLnmpWasm(options?: { path?: string; bytes?: ArrayBuffe
   return _initPromise;
 }
 
-export const lnmp = {
-  ready: async () => { await initLnmpWasm(); },
-  parse: (text: string) => {
-    const rec = recordToJson(_parse(text));
-    // If wasm returned an empty record but fallback is enabled, count it as a fallback use.
-    if ((rec && typeof rec === 'object' && Object.keys(rec).length === 0) && _parseFallback) {
+function parseWithOptions(text: string, options?: ParseOptions) {
+  const mode = options?.mode || "lenient";
+  const allowFallback = options?.allowFallback !== false;
+  const prevFallback = _parseFallback;
+  if (!allowFallback) _parseFallback = false;
+  try {
+    const rec = recordToJson(mode === "lenient" ? _parseLenient(text) : _parse(text));
+    const recObj = rec as any;
+    if (allowFallback && recObj && typeof recObj === 'object' && Object.keys(recObj).length === 0) {
       _fallbackCount++;
     }
-    // If strict mode is enabled (no fallback) and parsing returned an empty
-    // record for non-empty text input, treat this as a parse error and throw.
-    if (!_parseFallback && text && text.trim().length > 0) {
-      const maybeObj = rec as any;
-      if (maybeObj && typeof maybeObj === 'object' && Object.keys(maybeObj).length === 0) {
+    if (!allowFallback && text && text.trim().length > 0) {
+      if (recObj && typeof recObj === 'object' && Object.keys(recObj).length === 0) {
         const e = new Error('Strict parse failed: no fields parsed');
         (e as any).code = 'UNEXPECTED_TOKEN';
         (e as any).details = { reason: 'no_fields_parsed', text };
@@ -322,7 +460,32 @@ export const lnmp = {
       }
     }
     return rec;
-  },
+  } catch (rawErr) {
+    const err = normalizeWasmJsValue(rawErr);
+    if (err && typeof err === 'object' && 'code' in err) {
+      const e = new Error(err.message || String(err));
+      (e as any).code = (err as any).code;
+      (e as any).details = (err as any).details;
+      throw e;
+    }
+    throw err;
+  } finally {
+    _parseFallback = prevFallback;
+  }
+}
+
+function encodeBinaryWithOptions(text: string, options?: EncodeBinaryOptions) {
+  const mode = options?.mode || "lenient";
+  const shouldSanitize = options?.sanitize !== false && (options?.sanitize !== undefined || mode === "lenient");
+  const sanitizeOpts = shouldSanitize ? normalizeSanitizeOptions(options?.sanitize === true ? {} : options?.sanitize) : undefined;
+  const prepared = shouldSanitize ? _sanitize(text, sanitizeOpts).text : text;
+  if (mode === "lenient") return _encodeBinaryLenient(prepared);
+  return _encodeBinary(prepared);
+}
+
+export const lnmp = {
+  ready: async () => { await initLnmpWasm(); },
+  parse: (text: string, options?: ParseOptions) => parseWithOptions(text, options),
   encode: (obj: any) => {
     try {
       return _encode(obj);
@@ -337,9 +500,9 @@ export const lnmp = {
       throw err;
     }
   },
-  encodeBinary: (text: string) => {
+  encodeBinary: (text: string, options?: EncodeBinaryOptions) => {
     try {
-      return _encodeBinary(text);
+      return encodeBinaryWithOptions(text, options);
     } catch (rawErr) {
       const err = normalizeWasmJsValue(rawErr);
       if (err && typeof err === 'object' && 'code' in err) {
@@ -374,6 +537,7 @@ export const lnmp = {
       throw err;
     }
   },
+  sanitize: (text: string, options?: SanitizeOptions | boolean) => _sanitize(text, options),
   schemaDescribe: (mode?: string) => {
     try {
       const s = _schemaDescribe(mode || 'full');
@@ -388,13 +552,6 @@ export const lnmp = {
         }
       }
       return val;
-      if (s && typeof s === 'object' && !('fields' in s)) {
-        const keys = Object.keys(s);
-        if (keys.length && keys.every(k => /^\d+$/.test(k))) {
-          return { fields: s };
-        }
-      }
-      return s;
     } catch (rawErr) {
       const err = normalizeWasmJsValue(rawErr);
       if (err && typeof err === 'object' && 'code' in err) {
@@ -446,116 +603,44 @@ lnmp.encode = (obj: any) => {
   return _encode(normalized);
 };
 
-export function parse(text: string) {
-  try {
-    const rec = _parse(text);
-    if ((rec && typeof rec === 'object' && Object.keys(rec).length === 0) && _parseFallback) {
-      _fallbackCount++;
-    }
-    if (!_parseFallback && text && text.trim().length > 0) {
-      const maybeObj = rec as any;
-      if (maybeObj && typeof maybeObj === 'object' && Object.keys(maybeObj).length === 0) {
-        const e = new Error('Strict parse failed: no fields parsed');
-        (e as any).code = 'UNEXPECTED_TOKEN';
-        (e as any).details = { reason: 'no_fields_parsed', text };
-        throw e;
-      }
-    }
-    return rec;
-  } catch (rawErr) {
-    const err = normalizeWasmJsValue(rawErr);
-    if (err && typeof err === 'object' && 'code' in err) {
-      const e = new Error(err.message || String(err));
-      (e as any).code = err.code;
-      (e as any).details = err.details;
-      throw e;
-    }
-    throw err;
-  }
+export function parse(text: string, options?: ParseOptions) {
+  return parseWithOptions(text, options);
 }
 
 export function encode(obj: any) {
-  try {
-    return _encode(obj);
-  } catch (rawErr) {
-    const err = normalizeWasmJsValue(rawErr);
-    if (err && typeof err === 'object' && 'code' in err) {
-      const e = new Error(err.message || String(err));
-      (e as any).code = err.code;
-      (e as any).details = err.details;
-      throw e;
-    }
-    throw err;
-  }
+  return lnmp.encode(obj);
 }
 
-export function encodeBinary(text: string) {
-  try {
-    const u = _encodeBinary(text);
-    return u instanceof Uint8Array ? u : Buffer.from(u as any);
-  } catch (rawErr) {
-    const err = normalizeWasmJsValue(rawErr);
-    if (err && typeof err === 'object' && 'code' in err) {
-      const e = new Error(err.message || String(err));
-      (e as any).code = err.code;
-      (e as any).details = err.details;
-      throw e;
-    }
-    throw err;
-  }
+export function encodeBinary(text: string, options?: EncodeBinaryOptions) {
+  const u = encodeBinaryWithOptions(text, options);
+  return u instanceof Uint8Array ? u : Buffer.from(u as any);
 }
 
 export function decodeBinary(binary: string | Uint8Array) {
-  try {
-    const buf = typeof binary === "string" ? Buffer.from(binary, "base64") : binary;
+  if (typeof binary === "string") {
+    const buf = Buffer.from(binary, "base64");
     return _decodeBinary(buf as any);
-  } catch (rawErr) {
-    const err = normalizeWasmJsValue(rawErr);
-    if (err && typeof err === 'object' && 'code' in err) {
-      const e = new Error(err.message || String(err));
-      (e as any).code = err.code;
-      (e as any).details = err.details;
-      throw e;
-    }
-    throw err;
   }
+  return _decodeBinary(binary as any);
 }
 
 export function schemaDescribe(mode = "full") {
-  try {
-    const s = _schemaDescribe(mode);
-    const val = normalizeWasmJsValue(s);
-    if (val && typeof val === 'object' && val.fields) return val;
-    if (val && typeof val === 'object' && !('fields' in val)) {
-      const keys = Object.keys(val as any);
-      if (keys.length && keys.every(k => /^\d+$/.test(k))) {
-        return { fields: val };
-      }
+  const s = _schemaDescribe(mode);
+  const val = normalizeWasmJsValue(s);
+  if (val && typeof val === 'object' && val.fields) return val;
+  if (val && typeof val === 'object' && !('fields' in val)) {
+    const keys = Object.keys(val as any);
+    if (keys.length && keys.every(k => /^\d+$/.test(k))) {
+      return { fields: val };
     }
-    return val;
-  } catch (rawErr) {
-    const err = normalizeWasmJsValue(rawErr);
-    if (err && typeof err === 'object' && 'code' in err) {
-      const e = new Error(err.message || String(err));
-      (e as any).code = err.code;
-      (e as any).details = err.details;
-      throw e;
-    }
-    throw err;
   }
+  return val;
 }
 
 export function debugExplain(text: string) {
-  try {
-    return _debugExplain(text);
-  } catch (rawErr) {
-    const err = normalizeWasmJsValue(rawErr);
-    if (err && typeof err === 'object' && 'code' in err) {
-      const e = new Error(err.message || String(err));
-      (e as any).code = err.code;
-      (e as any).details = err.details;
-      throw e;
-    }
-    throw err;
-  }
+  return _debugExplain(text);
+}
+
+export function sanitize(text: string, options?: SanitizeOptions | boolean) {
+  return _sanitize(text, options);
 }

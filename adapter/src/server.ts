@@ -6,6 +6,7 @@ import { decodeBinaryTool } from "./tools/decodeBinary";
 import { encodeBinaryTool } from "./tools/encodeBinary";
 import { schemaDescribeTool } from "./tools/schemaDescribe";
 import { debugExplainTool } from "./tools/debugExplain";
+import { sanitizeTool } from "./tools/sanitize";
 
 export function createServer(opts?: { name?: string; version?: string }) {
   // Best-effort: prefer package.json version if available
@@ -27,6 +28,7 @@ export function createServer(opts?: { name?: string; version?: string }) {
   server.tool(encodeBinaryTool);
   server.tool(schemaDescribeTool);
   server.tool(debugExplainTool);
+  server.tool(sanitizeTool);
   return server;
 }
 

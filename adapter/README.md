@@ -18,6 +18,9 @@ import { lnmp } from '@lnmplang/lnmp-mcp';
 await lnmp.ready();
 const rec = lnmp.parse('F7=1\nF12=14532');
 console.log(rec);
+// For LLM outputs, sanitize and encode leniently:
+const { text: safe } = lnmp.sanitize('F1=1\nF2=Hello "world"');
+const bin = lnmp.encodeBinary(safe, { mode: 'lenient', sanitize: false });
 ```
 
 Example demo and development server
@@ -58,12 +61,13 @@ Admin endpoints and per-request strict parsing
 ------------------------------------------------
 The adapter ships with a tiny HTTP wrapper for local testing which exposes the MCP tools via simple REST endpoints. When running the script `scripts/run_http_server.js` the following endpoints are available by default:
 
-- POST /parse — parse LNMP text. Payload: `{ "text": "F7=1", "strict": true|false }`. When `strict` is true, a parsing failure returns HTTP 500 and a structured JSON error (code, message, details). When omitted or `false`, invalid inputs fall back to the JS parser and return an empty record `{ record: {} }`.
+- POST /parse — parse LNMP text. Payload: `{ "text": "F7=1", "strict": true|false, "mode": "strict"|"lenient" }`. When `strict` is true, a parsing failure returns HTTP 500 and a structured JSON error (code, message, details). When omitted or `false`, invalid inputs fall back to the JS parser and return an empty record `{ record: {} }`.
 - POST /encode — encode a parsed LNMP record back to text. Payload: `{ "record": { ... } }`.
-- POST /encbin — encode text to binary (base64) with `encbin`.
+- POST /encbin — encode text to binary (base64) with `encbin`. Payload supports `{ "mode": "lenient"|"strict", "sanitize": true|false, "sanitizeOptions": { ... } }` to repair LLM outputs before encoding.
 - POST /decbin — decode binary text (base64) back to LNMP text.
 - GET/POST /schema — returns a schema description (full or compact mode).
 - POST /explain — returns debugging explanation of a record.
+- POST /sanitize — runs the sanitizer (quote/escape repair) and returns `{ text, changed }`.
 
 Admin endpoints:
 - POST /admin/setParseFallback — toggles global fallback behavior. Body: `{ "fallback": true|false }`.
@@ -72,6 +76,7 @@ Admin endpoints:
 - GET /admin/stats — returns simple counters: `{ "fallbackCount": <number>, "wasmErrorCount": <number> }` that help detect how often fallback was used or wasm errors occurred.
 
 Notes
+- LLM/agent-to-agent flows should run text through `lnmp.sanitize` (or set `mode: "lenient"` on encodeBinary) to repair quotes/escapes before strict parsing.
 - The `strict` field provides per-request enforcement, so you don't need to change global state to try strict parsing behavior.
 - For production systems, the HTTP wrapper is intended as a local test harness only; proper MCP transports should be used in deployment.
 

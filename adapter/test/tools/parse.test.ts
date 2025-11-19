@@ -1,4 +1,5 @@
 import { lnmp } from '../../src/bindings/lnmp';
+import { parseTool } from '../../src/tools/parse';
 
 describe('lnmp.parse', () => {
   beforeAll(async () => {
@@ -33,7 +34,6 @@ describe('lnmp.parse', () => {
   });
   
   test('parseTool.handler respects per-request strict flag', async () => {
-    const { parseTool } = require('../../dist/tools/parse.js');
     // Non-strict fallback behavior (returns empty object) should work
     let res = await parseTool.handler({ text: 'notlnmp' });
     expect(res.record).toBeDefined();
@@ -41,5 +41,12 @@ describe('lnmp.parse', () => {
     await expect(async () => {
       await parseTool.handler({ text: 'notlnmp', strict: true });
     }).rejects.toThrow();
+  });
+
+  test('lenient mode sanitizes and parses', async () => {
+    const messy = 'F1=1\nF2=Hello "world"';
+    const result = lnmp.parse(messy, { mode: 'lenient' });
+    expect(result).toBeDefined();
+    expect(result['1'] === 1 || result['1'] === true).toBeTruthy();
   });
 });

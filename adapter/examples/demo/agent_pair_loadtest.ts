@@ -52,7 +52,8 @@ function ensureF2Quoted(lnmpText: string) {
   for (const l of lines) {
     const m = /^F2=(?:"([\s\S]*)"|([\s\S]*))$/.exec(l);
     if (m) {
-      const v = (m[1] || m[2] || '').replace(/"/g, '\\"');
+      const rawVal = (m[1] || m[2] || '').replace(/\\"/g, '"'); // normalize any escaped quotes
+      const v = rawVal.replace(/"/g, '\\"');
       out.push(`F2="${v}"`);
       seenF2 = true;
       continue;
@@ -84,6 +85,7 @@ async function runPair(durationSec = 60, useOpenAI = false) {
   const start = Date.now();
   let round = 0;
   const metrics: any[] = [];
+  const transcripts: any[] = [];
 
   // simple system prompt for OpenAI (prefer JSON output for easier parsing)
   const system = `You are a short LNMP responder. When asked to reply, return either a small JSON with {"action": "reply", "text": "..."} or a LNMP text reply with F1=2 and F2=<reply>. Prefer the JSON form and ONLY return the JSON object or LNMP text (no extra commentary).`.trim();
@@ -99,7 +101,7 @@ async function runPair(durationSec = 60, useOpenAI = false) {
     round++;
     try {
     // ensure we quote the LNMP F2 text so wasm text format doesn't choke
-    const aText = `F1=1\nF2=\"Hello from A round ${round}\"`;
+    const aText = `F1=1\nF2=Hello from A round ${round}`;
     const begin = process.hrtime.bigint();
     const t1Start = process.hrtime.bigint();
     // A encbin
@@ -108,7 +110,7 @@ async function runPair(durationSec = 60, useOpenAI = false) {
     if (verbose) console.log(`Round ${round} - POST /encbin aText`);
     const sanitizedA = ensureF2Quoted(aText);
     if (verbose && sanitizedA !== aText) console.warn(`Sanitized aText on round ${round}`);
-    const encA = await post(base, '/encbin', { text: sanitizedA });
+    const encA = await post(base, '/encbin', { text: sanitizedA, mode: 'lenient' });
     const encAEnd = process.hrtime.bigint();
     // Send to B (simulate wire)
     const decBStart = process.hrtime.bigint();
@@ -166,7 +168,7 @@ async function runPair(durationSec = 60, useOpenAI = false) {
     if (verbose) console.log(`Round ${round} - POST /encbin bResponseText`);
     const sanitizedB = ensureF2Quoted(bResponseText);
     if (verbose && sanitizedB !== bResponseText) console.warn(`Sanitized bResponseText on round ${round}`);
-    const encB = await post(base, '/encbin', { text: sanitizedB });
+    const encB = await post(base, '/encbin', { text: sanitizedB, mode: 'lenient' });
     const encBEnd = process.hrtime.bigint();
     // deliver to A: decbin
     const decAStart = process.hrtime.bigint();
@@ -184,7 +186,7 @@ async function runPair(durationSec = 60, useOpenAI = false) {
         const rt = Number(end - begin) / 1e6; // ms
 
         const binaryBytesA = Buffer.from(encA.binary, 'base64').length;
-        const m = {
+    const m = {
       round,
       a_text: aText,
       b_text: bResponseText,
@@ -201,6 +203,17 @@ async function runPair(durationSec = 60, useOpenAI = false) {
       round_trip_ms: rt,
     };
     metrics.push(m);
+    // keep lightweight transcript (cap to first 200 rounds to avoid huge output)
+    if (transcripts.length < 200) {
+      transcripts.push({
+        round,
+        a_text: sanitizedA,
+        b_text: bResponseText,
+        llm_response: llmResp,
+        decB_text: decB.text,
+        decA_text: decA.text,
+      });
+    }
     if (verbose) console.log(`Round ${round}: A->B bytes=${m.binary_size_a} enc=${m.encA_ms.toFixed(2)}ms dec=${m.decB_ms.toFixed(2)}ms parse=${m.parseB_ms.toFixed(2)}ms llm=${m.llm_ms.toFixed(2)}ms enc=${m.encB_ms.toFixed(2)}ms dec=${m.decA_ms.toFixed(2)}ms parse=${m.parseA_ms.toFixed(2)}ms total=${m.round_trip_ms.toFixed(2)}ms`);
     } catch (roundErr) {
       console.warn(`Round ${round} error:`, String(roundErr));
@@ -229,7 +242,11 @@ async function runPair(durationSec = 60, useOpenAI = false) {
   console.log(`Round P50/P90/P99: ${percentile(50).toFixed(2)} / ${percentile(90).toFixed(2)} / ${percentile(99).toFixed(2)} ms`);
   if (outputFile) {
     try {
-      writeFileSync(outputFile, { metrics, summary: { totalMsgs, msgsPerSec, avgRoundTripMs: avg('round_trip_ms') } });
+      writeFileSync(outputFile, {
+        metrics,
+        summary: { totalMsgs, msgsPerSec, avgRoundTripMs: avg('round_trip_ms') },
+        transcripts,
+      });
       console.log(`Wrote metrics to ${outputFile}`);
     } catch (err) {
       console.warn('Failed to write metrics:', String(err));

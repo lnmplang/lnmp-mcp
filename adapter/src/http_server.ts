@@ -11,6 +11,7 @@ import { encodeBinaryTool } from './tools/encodeBinary';
 import { decodeBinaryTool } from './tools/decodeBinary';
 import { schemaDescribeTool } from './tools/schemaDescribe';
 import { debugExplainTool } from './tools/debugExplain';
+import { sanitizeTool } from './tools/sanitize';
 
 function getJSONBody(req: http.IncomingMessage) {
   return new Promise<any>((resolve, reject) => {
@@ -37,7 +38,7 @@ export async function startHttpServer(portArg?: number): Promise<{ server: http.
     try {
       if (req.method === 'POST' && pathname === '/parse') {
         const body = await getJSONBody(req);
-        const r = await (parseTool as any).handler({ text: body.text, strict: !!body.strict });
+        const r = await (parseTool as any).handler({ text: body.text, strict: !!body.strict, mode: body.mode });
         return res.end(JSON.stringify(r));
       }
       if (req.method === 'POST' && pathname === '/encode') {
@@ -47,7 +48,12 @@ export async function startHttpServer(portArg?: number): Promise<{ server: http.
       }
       if (req.method === 'POST' && pathname === '/encbin') {
         const body = await getJSONBody(req);
-        const r = await (encodeBinaryTool as any).handler({ text: body.text });
+        const r = await (encodeBinaryTool as any).handler({
+          text: body.text,
+          mode: body.mode,
+          sanitize: body.sanitize,
+          sanitizeOptions: body.sanitizeOptions,
+        });
         return res.end(JSON.stringify(r));
       }
       if (req.method === 'POST' && pathname === '/decbin') {
@@ -63,6 +69,11 @@ export async function startHttpServer(portArg?: number): Promise<{ server: http.
       if (req.method === 'POST' && pathname === '/explain') {
         const body = await getJSONBody(req);
         const r = await (debugExplainTool as any).handler({ text: body.text });
+        return res.end(JSON.stringify(r));
+      }
+      if (req.method === 'POST' && pathname === '/sanitize') {
+        const body = await getJSONBody(req);
+        const r = await (sanitizeTool as any).handler({ text: body.text, options: body.options || body.sanitizeOptions });
         return res.end(JSON.stringify(r));
       }
       if (req.method === 'POST' && pathname === '/admin/setParseFallback') {

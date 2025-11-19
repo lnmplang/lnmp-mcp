@@ -53,13 +53,13 @@ describe("LLM-driven demo server endpoints", () => {
     }
   });
 
-  test("encbin returns TEXT_FORMAT_ERROR for unquoted inner quotes", async () => {
+  test("encbin repairs unquoted inner quotes instead of failing", async () => {
     const base = `http://localhost:${port}`;
     const badText = 'F1=1\nF2=Hello "world"';
-    const enc = await post(base, "/encbin", { text: badText });
-    // Expect an error object with code TEXT_FORMAT_ERROR
-    expect(enc.error || enc.code).toBeTruthy();
-    expect(enc.code || enc.error?.code).toBe('TEXT_FORMAT_ERROR');
+    const enc = await post(base, "/encbin", { text: badText, mode: "lenient" });
+    expect(enc.binary).toBeTruthy();
+    expect(enc.sanitized).toBeTruthy();
+    expect(enc.sanitizedText || "").toMatch(/\\\"world\\\"/);
   });
 
   test("encbin succeeds for properly quoted F2", async () => {

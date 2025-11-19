@@ -1,10 +1,14 @@
 use wasm_bindgen::prelude::*;
 use serde_wasm_bindgen::{to_value, from_value};
 use serde_json::{Value as JsonValue, Number as JsonNumber, json};
+use serde::Deserialize;
 
 use lnmp_core::{LnmpRecord, LnmpField, LnmpValue};
-use lnmp_codec::{Parser, Encoder, ParsingMode};
+use lnmp_codec::{Parser, Encoder};
 use lnmp_codec::binary::{BinaryEncoder, BinaryDecoder};
+use lnmp_codec::binary::encoder::EncoderConfig as BinaryEncoderConfig;
+use lnmp_codec::config::TextInputMode;
+use lnmp_sanitize::{sanitize_lnmp_text, SanitizationConfig, SanitizationLevel};
 use serde_yaml;
 // Include the example semantic dictionary at compile time to return authoritative schema info
 const EXAMPLE_SEMANTIC_DICTIONARY_YAML: &str = include_str!("../../../../lnmp-protocol/examples/examples/semantic_dictionary.yaml");
@@ -171,7 +175,57 @@ fn map_binary_err(err: &lnmp_codec::binary::error::BinaryError) -> (String, Opti
             "DELTA_ERROR".to_string(),
             Some(json!({"reason": reason})),
         ),
+        UnsupportedFeature { feature } => (
+            "UNSUPPORTED_FEATURE".to_string(),
+            Some(json!({ "feature": feature })),
+        ),
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct WasmSanitizeOptions {
+    level: Option<String>,
+    auto_quote_strings: Option<bool>,
+    auto_escape_quotes: Option<bool>,
+    normalize_booleans: Option<bool>,
+    normalize_numbers: Option<bool>,
+}
+
+fn sanitize_config_from_js(options: Option<JsValue>) -> Result<SanitizationConfig, JsValue> {
+    let mut config = SanitizationConfig::default();
+    if let Some(js_options) = options {
+        if !js_options.is_null() && !js_options.is_undefined() {
+            let opts: WasmSanitizeOptions = from_value(js_options)
+                .map_err(|e| js_error("INVALID_SANITIZE_OPTIONS", &format!("Invalid sanitize options: {}", e), None))?;
+            if let Some(level_str) = opts.level {
+                config.level = match level_str.to_lowercase().as_str() {
+                    "minimal" => SanitizationLevel::Minimal,
+                    "normal" => SanitizationLevel::Normal,
+                    "aggressive" => SanitizationLevel::Aggressive,
+                    other => return Err(js_error("INVALID_SANITIZE_LEVEL", &format!("Unknown level: {}", other), None)),
+                };
+            }
+            if let Some(v) = opts.auto_quote_strings { config.auto_quote_strings = v; }
+            if let Some(v) = opts.auto_escape_quotes { config.auto_escape_quotes = v; }
+            if let Some(v) = opts.normalize_booleans { config.normalize_booleans = v; }
+            if let Some(v) = opts.normalize_numbers { config.normalize_numbers = v; }
+        }
+    }
+    Ok(config)
+}
+
+fn config_to_json(config: &SanitizationConfig) -> JsonValue {
+    json!({
+        "level": match config.level {
+            SanitizationLevel::Minimal => "minimal",
+            SanitizationLevel::Normal => "normal",
+            SanitizationLevel::Aggressive => "aggressive",
+        },
+        "autoQuoteStrings": config.auto_quote_strings,
+        "autoEscapeQuotes": config.auto_escape_quotes,
+        "normalizeBooleans": config.normalize_booleans,
+        "normalizeNumbers": config.normalize_numbers,
+    })
 }
 
 /// Convert a JSON object into LnmpRecord
@@ -227,6 +281,17 @@ pub fn parse(text: &str) -> Result<JsValue, JsValue> {
 }
 
 #[wasm_bindgen]
+pub fn parse_lenient(text: &str) -> Result<JsValue, JsValue> {
+    let mut parser = Parser::new_lenient(text).map_err(|e| { let (code, details) = map_lnmp_err(&e); js_error(&code, &e.to_string(), details) })?;
+    let record = parser.parse_record().map_err(|e| { let (code, details) = map_lnmp_err(&e); js_error(&code, &e.to_string(), details) })?;
+    if record.sorted_fields().is_empty() && !text.trim().is_empty() {
+        return Err(js_error("UNEXPECTED_TOKEN", "Strict parse failed: no fields parsed", Some(json!({ "reason": "no_fields_parsed" }))));
+    }
+    let json = record_to_json(&record);
+    to_value(&json).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[wasm_bindgen]
 pub fn encode(obj: JsValue) -> Result<String, JsValue> {
     let json: JsonValue = from_value(obj).map_err(|e| js_error("INVALID_INPUT", &format!("Invalid input: {}", e), None))?;
     let rec = json_to_record(&json).map_err(|s| JsValue::from_str(&s))?;
@@ -237,6 +302,13 @@ pub fn encode(obj: JsValue) -> Result<String, JsValue> {
 #[wasm_bindgen]
 pub fn encode_binary(text: &str) -> Result<Vec<u8>, JsValue> {
     let enc = BinaryEncoder::new();
+    enc.encode_text(text).map_err(|e| { let (code, details) = map_binary_err(&e); js_error(&code, &e.to_string(), details) })
+}
+
+#[wasm_bindgen]
+pub fn encode_binary_lenient(text: &str) -> Result<Vec<u8>, JsValue> {
+    let config = BinaryEncoderConfig::default().with_text_input_mode(TextInputMode::Lenient);
+    let enc = BinaryEncoder::with_config(config);
     enc.encode_text(text).map_err(|e| { let (code, details) = map_binary_err(&e); js_error(&code, &e.to_string(), details) })
 }
 
@@ -282,6 +354,19 @@ pub fn debug_explain(text: &str) -> Result<String, JsValue> {
         lines.push(format!("F{}={}    # {}", f.fid, val, f.fid));
     }
     Ok(lines.join("\n"))
+}
+
+#[wasm_bindgen]
+pub fn sanitize(text: &str, options: Option<JsValue>) -> Result<JsValue, JsValue> {
+    let config = sanitize_config_from_js(options)?;
+    let sanitized = sanitize_lnmp_text(text, &config);
+    let changed = !matches!(sanitized, std::borrow::Cow::Borrowed(_));
+    let out = json!({
+        "text": sanitized.into_owned(),
+        "changed": changed,
+        "config": config_to_json(&config),
+    });
+    to_value(&out).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 // End of exports
 
