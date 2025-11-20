@@ -1,4 +1,4 @@
-# LNMP-MCP Adapter — Architecture and Engineering Specification
+# LNMP-MCP Adapter — Architecture and Engineering Specification.
 
 Version: Draft 1.0
 
