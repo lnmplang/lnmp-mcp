@@ -1,0 +1,13 @@
+{
+  "name": "lnmp-mcp",
+  "version": "0.1.0",
+  "description": "LNMP protocol tools for AI agents via MCP",
+  "tools": [
+    "lnmp.parse",
+    "lnmp.encode",
+    "lnmp.decodeBinary",
+    "lnmp.encodeBinary",
+    "lnmp.schema.describe",
+    "lnmp.debug.explain"
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "lnmp.parse": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "strict": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["strict", "lenient"] }
+      },
+      "required": ["text"]
+    },
+    "output": { "type": "object", "properties": { "record": { "type": "object" } } }
+  },
+  "lnmp.encode": {
+    "input": { "type": "object", "properties": { "record": { "type": "object" } }, "required": ["record"] },
+    "output": { "type": "object", "properties": { "text": { "type": "string" } } }
+  },
+  "lnmp.decodeBinary": {
+    "input": { "type": "object", "properties": { "binary": { "type": "string" } }, "required": ["binary"] },
+    "output": { "type": "object", "properties": { "text": { "type": "string" } } }
+  },
+  "lnmp.encodeBinary": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "mode": { "type": "string", "enum": ["strict", "lenient"] },
+        "sanitize": { "type": "boolean" },
+        "sanitizeOptions": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string", "enum": ["minimal", "normal", "aggressive"] },
+            "autoQuoteStrings": { "type": "boolean" },
+            "autoEscapeQuotes": { "type": "boolean" },
+            "normalizeBooleans": { "type": "boolean" },
+            "normalizeNumbers": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["text"]
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "binary": { "type": "string" },
+        "sanitized": { "type": "boolean" },
+        "sanitizedText": { "type": "string" },
+        "mode": { "type": "string" }
+      }
+    }
+  },
+  "lnmp.schema.describe": {
+    "input": { "type": "object", "properties": { "mode": { "type": "string" } } },
+    "output": { "type": "object", "properties": { "fields": { "type": "object" } } }
+  },
+  "lnmp.debug.explain": {
+    "input": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] },
+    "output": { "type": "object", "properties": { "explanation": { "type": "string" } } }
+  },
+  "lnmp.sanitize": {
+    "input": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "options": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string", "enum": ["minimal", "normal", "aggressive"] },
+            "autoQuoteStrings": { "type": "boolean" },
+            "autoEscapeQuotes": { "type": "boolean" },
+            "normalizeBooleans": { "type": "boolean" },
+            "normalizeNumbers": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["text"]
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "changed": { "type": "boolean" },
+        "config": { "type": "object" }
+      }
+    }
+  }
+}
