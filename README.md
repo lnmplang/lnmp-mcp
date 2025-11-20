@@ -19,3 +19,9 @@ binding to the Rust LNMP core.
   - `git subtree push --prefix=tools/mcp lnmp-mcp main`
 - Pull updates from the standalone repo (if someone worked there): `git subtree pull --prefix=tools/mcp lnmp-mcp main --squash`
 - Do not commit build artifacts (adapter/dist, adapter/node_modules, adapter/coverage, adapter/rust/target, adapter/rust/pkg); they are intentionally gitignored.
+
+## Monorepo local build tips
+- Rust WASM: `cd tools/mcp/adapter/rust && rustup target add wasm32-unknown-unknown && cargo build --release --target wasm32-unknown-unknown`
+- Copy the resulting `lnmp_wasm.wasm` to the TS adapter’s expected location: `cp target/wasm32-unknown-unknown/release/lnmp_wasm.wasm ../src/wasm/lnmp_wasm_bg.wasm`
+- JS side: `cd tools/mcp/adapter && npm install && npm run build`
+- Rust crate paths already target the monorepo `crates/` directory; no extra symlinks needed.

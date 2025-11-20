@@ -7,6 +7,26 @@ Quick start
 - Run `npm run build` in `adapter/`.
 - Start the MCP provider with `node dist/index.js` (or via the tests/entry).
 
+Monorepo local build (lnmp-protocol)
+1) Rust target: `rustup target add wasm32-unknown-unknown`
+2) Build wasm from the monorepo crates:
+```bash
+cd tools/mcp/adapter/rust
+cargo build --release --target wasm32-unknown-unknown
+```
+The output will be at `tools/mcp/adapter/rust/target/wasm32-unknown-unknown/release/lnmp_wasm.wasm`.
+3) Copy or link the wasm into the TypeScript adapter:
+```bash
+cp target/wasm32-unknown-unknown/release/lnmp_wasm.wasm ../src/wasm/lnmp_wasm_bg.wasm
+```
+4) Build the JS adapter:
+```bash
+cd ..   # back to tools/mcp/adapter
+npm install
+npm run build
+```
+Node will consume the monorepo crates via the Rust-built wasm; no extra path hacks are needed.
+
 Quickstart SDK
 1) Install the adapter (or run locally):
 ```bash

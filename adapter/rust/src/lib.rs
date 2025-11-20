@@ -11,7 +11,7 @@ use lnmp_codec::config::TextInputMode;
 use lnmp_sanitize::{sanitize_lnmp_text, SanitizationConfig, SanitizationLevel};
 use serde_yaml;
 // Include the example semantic dictionary at compile time to return authoritative schema info
-const EXAMPLE_SEMANTIC_DICTIONARY_YAML: &str = include_str!("../../../../lnmp-protocol/examples/examples/semantic_dictionary.yaml");
+const EXAMPLE_SEMANTIC_DICTIONARY_YAML: &str = include_str!("../../../../examples/examples/semantic_dictionary.yaml");
 
 /// Convert LnmpRecord into serde_json::Value object for wasm
 fn record_to_json(record: &LnmpRecord) -> JsonValue {
