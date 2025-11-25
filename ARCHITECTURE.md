@@ -53,29 +53,164 @@ lnmp-mcp/
 
 Define JSON schemas for tool inputs/outputs and follow MCP SDK conventions.
 
-1) lnmp.parse
-- Input: { text: string }
-- Output: { record: Record<string, number | string | boolean | string[]> }
+### Core Tools (7 - Original)
 
-2) lnmp.encode
-- Input: { record: Record<string, any> }
-- Output: { text: string }
+#### 1) `lnmp.parse`
+- **Input**: `{ text: string, strict?: boolean, mode?: "strict" | "lenient" }`
+- **Output**: `{ record: Record<string, number | string | boolean | string[]> }`
+- **Description**: Parse LNMP text format into structured record
 
-3) lnmp.decodeBinary
-- Input: { binary: string (base64) }
-- Output: { text: string }
+#### 2) `lnmp.encode`
+- **Input**: `{ record: Record<string, any> }`
+- **Output**: `{ text: string }`
+- **Description**: Encode record back to LNMP text
 
-4) lnmp.encodeBinary
-- Input: { text: string }
-- Output: { binary: string (base64) }
+#### 3) `lnmp.decodeBinary`
+- **Input**: `{ binary: string (base64) }`
+- **Output**: `{ text: string }`
+- **Description**: Decode binary LNMP to text
 
-5) lnmp.schema.describe
-- Input: { mode: "full" | "compact" }
-- Output: { fields: Record<string, string> }
+#### 4) `lnmp.encodeBinary`
+- **Input**: `{ text: string, mode?: "strict" | "lenient", sanitize?: boolean }`
+- **Output**: `{ binary: string (base64) }`
+- **Description**: Encode text to binary LNMP
 
-6) lnmp.debug.explain
-- Input: { text: string }
-- Output: { explanation: string }
+#### 5) `lnmp.schema.describe`
+- **Input**: `{ mode?: "full" | "compact" }`
+- **Output**: `{ fields: Record<string, string> }`
+- **Description**: Get semantic dictionary schema
+
+#### 6) `lnmp.debug.explain`
+- **Input**: `{ text: string }`
+- **Output**: `{ explanation: string }`
+- **Description**: Debug explanation of record fields
+
+#### 7) `lnmp.sanitize`
+- **Input**: `{ text: string, options?: SanitizeOptions }`
+- **Output**: `{ text: string, changed: boolean }`
+- **Description**: Sanitize/normalize LNMP input
+
+---
+
+### Extended Tools (9 - New from Meta Crate)
+
+#### 8) `lnmp.envelope.wrap`
+- **Input**: `{ record: object, metadata?: { timestamp?: number, source?: string, trace_id?: string, sequence?: number } }`
+- **Output**: `{ envelope: { record: object, metadata: object } }`
+- **Description**: Wrap LNMP record with operational metadata
+- **Module**: `lnmp-envelope`
+- **Use Case**: Add timestamp, source, trace ID for distributed tracing
+
+#### 9) `lnmp.network.decide`
+- **Input**: `{ message: { envelope: object, kind: "Event" | "State" | "Command" | "Query" | "Alert", priority?: number, ttl_ms?: number }, now?: number }`
+- **Output**: `{ decision: "SendToLLM" | "ProcessLocally" | "Drop" }`
+- **Description**: ECO routing policy - decides message routing
+- **Module**: `lnmp-net`
+- **Impact**: **90%+ LLM API call reduction**
+- **Algorithm**: 
+  - Expired → Drop
+  - Alert (priority > 200) → SendToLLM
+  - Events/State → importance threshold check
+  - Commands/Queries → ProcessLocally
+
+#### 10) `lnmp.network.importance`
+- **Input**: `{ message: object, now?: number }`
+- **Output**: `{ score: number (0.0-1.0) }`
+- **Description**: Compute message importance score
+- **Module**: `lnmp-net`
+- **Formula**: 50% priority + 50% SFE score
+
+#### 11) `lnmp.transport.toHttp`
+- **Input**: `{ envelope: object }`
+- **Output**: `{ headers: { "X-LNMP-Timestamp"?: string, "X-LNMP-Source"?: string, "X-LNMP-Trace-Id"?: string, "traceparent"?: string, ... } }`
+- **Description**: Convert envelope metadata to HTTP headers
+- **Module**: `lnmp-transport`
+- **Standards**: W3C Trace Context (`traceparent`), CloudEvents alignment
+
+#### 12) `lnmp.transport.fromHttp`
+- **Input**: `{ headers: object }`
+- **Output**: `{ metadata: { timestamp?: number, source?: string, trace_id?: string, ... } }`
+- **Description**: Parse HTTP headers to envelope metadata
+- **Module**: `lnmp-transport`
+
+#### 13) `lnmp.embedding.computeDelta`
+- **Input**: `{ base: number[], updated: number[] }`  // Same dimension required
+- **Output**: `{ delta: { changes: Array<{index: number, delta: number}>, compressionRatio: number, dimension: number } }`
+- **Description**: Compute vector delta for incremental embedding updates
+- **Module**: `lnmp-embedding`
+- **Compression**: **80-95% size reduction** for 1-5% changes
+- **Example**: 1536-dim vector, 1% change: 6KB → 300 bytes
+
+#### 14) `lnmp.embedding.applyDelta`
+- **Input**: `{ base: number[], delta: object }`
+- **Output**: `{ vector: number[] }`
+- **Description**: Apply delta to base vector to reconstruct updated vector
+- **Module**: `lnmp-embedding`
+
+#### 15) `lnmp.spatial.encode`
+- **Input**: `{ positions: number[], mode?: "snapshot" | "delta", previousPositions?: number[] }`
+- **Output**: `{ binary: string (base64), mode: string }`
+- **Description**: Encode 3D spatial positions with snapshot or delta compression
+- **Module**: `lnmp-spatial`
+- **Use Cases**: Robot position tracking, 3D game state, sensor arrays
+- **Modes**:
+  - **Snapshot**: Full position array (0x00 marker)
+  - **Delta**: Only changed positions (0x01 marker + index-value pairs)
+
+#### 16) `lnmp.context.score`
+- **Input**: `{ envelope: object, now?: number }`
+- **Output**: `{ scores: { freshnessScore: number, importance: number, riskLevel: string, confidence: number, compositeScore: number } }`
+- **Description**: Score envelope for LLM context window optimization
+- **Module**: `lnmp-sfe` (Semantic Field Extensions)
+- **Formula**: `compositeScore = (30% × freshness + 40% × importance + 30% × confidence) × risk_penalty`
+- **Use Case**: Select top-K freshest/most important records for LLM context
+
+---
+
+## Meta Crate Architecture
+
+### Migration from Individual Crates
+
+**Before (v0.1)**:
+```rust
+// adapter/rust/Cargo.toml
+lnmp-core = { path = "../../../../crates/lnmp-core" }
+lnmp-codec = { path = "../../../../crates/lnmp-codec" }
+lnmp-sanitize = { path = "../../../../crates/lnmp-sanitize" }
+```
+
+**After (v0.2 - Meta Crate)**:
+```rust
+// adapter/rust/Cargo.toml
+lnmp = { path = "../../../../crates/lnmp" }
+```
+
+### Benefits
+1. **Single Dependency**: Access to 11 modules via one crate
+2. **Version Consistency**: All modules guaranteed compatible
+3. **Simplified Updates**: Update one dependency vs many
+4. **New Capabilities**: Instant access to envelope, net, transport, embedding, spatial, SFE modules
+
+### Module Breakdown
+
+```
+lnmp (meta crate)
+├── core        - Record types, field structures
+├── codec       - Text/binary parsing and encoding
+├── sanitize    - Input normalization
+├── envelope    - Operational metadata (NEW)
+├── net         - Message routing, QoS (NEW)
+├── transport   - HTTP/Kafka/gRPC bindings (NEW)
+├── embedding   - Vector delta compression (NEW)
+├── spatial     - 3D position streaming (NEW)
+├── sfe         - Context scoring (NEW)
+├── llb         - (Future: LLM blocks)
+└── quant       - (Future: Vector quantization)
+```
+
+**WASM Exports**: 13 new functions across 6 modules
+**TypeScript Tools**: 9 new tools
+**Total Tools**: **7 → 16 (229% increase)**
 
 ## TypeScript Adapter Implementation
 

@@ -3,14 +3,15 @@ name = "lnmp_wasm"
 version = "0.1.0"
 edition = "2021"
 
+# Build as standalone package, not part of parent workspace
+[workspace]
+
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
 wasm-bindgen = "0.2"
-lnmp-core = { path = "../../../../crates/lnmp-core" }
-lnmp-codec = { path = "../../../../crates/lnmp-codec" }
-lnmp-sanitize = { path = "../../../../crates/lnmp-sanitize" }
+lnmp = { path = "../../../../crates/lnmp" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde-wasm-bindgen = "0.6"

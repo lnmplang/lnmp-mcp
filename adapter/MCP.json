@@ -8,7 +8,16 @@
     "lnmp.encodeBinary",
     "lnmp.schema.describe",
     "lnmp.debug.explain",
-    "lnmp.sanitize"
+    "lnmp.sanitize",
+    "lnmp.envelope.wrap",
+    "lnmp.network.decide",
+    "lnmp.network.importance",
+    "lnmp.transport.toHttp",
+    "lnmp.transport.fromHttp",
+    "lnmp.embedding.computeDelta",
+    "lnmp.embedding.applyDelta",
+    "lnmp.spatial.encode",
+    "lnmp.context.score"
   ],
   "description": "LNMP protocol tools for AI agents via MCP",
   "author": "lnmplang"

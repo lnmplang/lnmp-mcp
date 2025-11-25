@@ -7,6 +7,13 @@ import { encodeBinaryTool } from "./tools/encodeBinary";
 import { schemaDescribeTool } from "./tools/schemaDescribe";
 import { debugExplainTool } from "./tools/debugExplain";
 import { sanitizeTool } from "./tools/sanitize";
+// New tools from meta crate modules
+import { envelopeWrapTool } from "./tools/envelope";
+import { routingDecideTool, routingImportanceTool } from "./tools/networkRouting";
+import { transportToHttpTool, transportFromHttpTool } from "./tools/transportHeaders";
+import { embeddingComputeDeltaTool, embeddingApplyDeltaTool } from "./tools/embeddingDelta";
+import { spatialEncodeTool } from "./tools/spatialStream";
+import { contextScoreTool } from "./tools/contextScore";
 
 export function createServer(opts?: { name?: string; version?: string }) {
   // Best-effort: prefer package.json version if available
@@ -22,6 +29,8 @@ export function createServer(opts?: { name?: string; version?: string }) {
     }
   }
   const server = new Server({ name: opts?.name || "lnmp-mcp", version });
+
+  // Original tools (7)
   server.tool(parseTool);
   server.tool(encodeTool);
   server.tool(decodeBinaryTool);
@@ -29,6 +38,18 @@ export function createServer(opts?: { name?: string; version?: string }) {
   server.tool(schemaDescribeTool);
   server.tool(debugExplainTool);
   server.tool(sanitizeTool);
+
+  // New tools from meta crate (9 tools)
+  server.tool(envelopeWrapTool);
+  server.tool(routingDecideTool);
+  server.tool(routingImportanceTool);
+  server.tool(transportToHttpTool);
+  server.tool(transportFromHttpTool);
+  server.tool(embeddingComputeDeltaTool);
+  server.tool(embeddingApplyDeltaTool);
+  server.tool(spatialEncodeTool);
+  server.tool(contextScoreTool);
+
   return server;
 }
 
@@ -36,7 +57,7 @@ export async function start(opts?: { wasmPath?: string; name?: string; version?:
   const s = createServer({ name: opts?.name, version: opts?.version });
   // Deterministically initialize LNMP WASM before allowing tools to run. This ensures tools are ready.
   try {
-    if (opts && opts.wasmPath) await lnmp.initLnmpWasm({ path: opts.wasmPath }).catch(() => {});
+    if (opts && opts.wasmPath) await lnmp.initLnmpWasm({ path: opts.wasmPath }).catch(() => { });
     // lnmp.ready is a convenience wrapper that resolves when wasm is ready
     await lnmp.ready();
   } catch (err) {

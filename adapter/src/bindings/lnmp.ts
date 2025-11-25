@@ -49,6 +49,20 @@ let _schemaDescribe: (mode: string) => any = (m) => { throw new Error("WASM not 
 let _debugExplain: (text: string) => string = (t) => { throw new Error("WASM not initialized"); };
 let _sanitize: (text: string, options?: SanitizeOptions | boolean) => SanitizeResult = (t) => { throw new Error("WASM not initialized"); };
 
+// New WASM exports from meta crate (13 functions)
+let _envelopeWrap: (record: any, metadata: any) => any = () => { throw new Error("WASM not initialized"); };
+let _envelopeToBinaryTlv: (metadata: any) => Uint8Array = () => { throw new Error("WASM not initialized"); };
+let _envelopeFromBinaryTlv: (bytes: Uint8Array) => any = () => { throw new Error("WASM not initialized"); };
+let _routingDecide: (message: any, nowMs: number) => string = () => { throw new Error("WASM not initialized"); };
+let _routingImportanceScore: (message: any, nowMs: number) => number = () => { throw new Error("WASM not initialized"); };
+let _transportToHttpHeaders: (envelope: any) => any = () => { throw new Error("WASM not initialized"); };
+let _transportFromHttpHeaders: (headers: any) => any = () => { throw new Error("WASM not initialized"); };
+let _embeddingComputeDelta: (base: number[], updated: number[]) => any = () => { throw new Error("WASM not initialized"); };
+let _embeddingApplyDelta: (base: number[], delta: any) => number[] = () => { throw new Error("WASM not initialized"); };
+let _spatialEncodeSnapshot: (positions: number[]) => Uint8Array = () => { throw new Error("WASM not initialized"); };
+let _spatialEncodeDelta: (prev: number[], curr: number[]) => Uint8Array = () => { throw new Error("WASM not initialized"); };
+let _contextScoreEnvelope: (envelope: any, nowMs: number) => any = () => { throw new Error("WASM not initialized"); };
+
 // ready promise and the init function will be used for deterministic init
 let _initPromise: Promise<void> | null = null;
 let _wasmLoaded = false;
@@ -401,6 +415,133 @@ export async function initWasm(bytes: ArrayBuffer | Buffer | Uint8Array) {
     }
     return fallbackSanitize(text, normalized);
   };
+
+  // Wire up new WASM exports from meta crate (13 functions)
+  if (exports.envelope_wrap) {
+    _envelopeWrap = (record, metadata) => {
+      try {
+        const res = (exports.envelope_wrap as any)(record, metadata);
+        return normalizeWasmJsValue(res);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.envelope_to_binary_tlv) {
+    _envelopeToBinaryTlv = (metadata) => {
+      try {
+        return (exports.envelope_to_binary_tlv as any)(metadata);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.envelope_from_binary_tlv) {
+    _envelopeFromBinaryTlv = (bytes) => {
+      try {
+        const res = (exports.envelope_from_binary_tlv as any)(bytes);
+        return normalizeWasmJsValue(res);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.routing_decide) {
+    _routingDecide = (message, nowMs) => {
+      try {
+        return (exports.routing_decide as any)(message, nowMs);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.routing_importance_score) {
+    _routingImportanceScore = (message, nowMs) => {
+      try {
+        return (exports.routing_importance_score as any)(message, nowMs);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.transport_to_http_headers) {
+    _transportToHttpHeaders = (envelope) => {
+      try {
+        const res = (exports.transport_to_http_headers as any)(envelope);
+        return normalizeWasmJsValue(res);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.transport_from_http_headers) {
+    _transportFromHttpHeaders = (headers) => {
+      try {
+        const res = (exports.transport_from_http_headers as any)(headers);
+        return normalizeWasmJsValue(res);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.embedding_compute_delta) {
+    _embeddingComputeDelta = (base, updated) => {
+      try {
+        const res = (exports.embedding_compute_delta as any)(base, updated);
+        return normalizeWasmJsValue(res);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.embedding_apply_delta) {
+    _embeddingApplyDelta = (base, delta) => {
+      try {
+        return (exports.embedding_apply_delta as any)(base, delta);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.spatial_encode_snapshot) {
+    _spatialEncodeSnapshot = (positions) => {
+      try {
+        return (exports.spatial_encode_snapshot as any)(positions);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.spatial_encode_delta) {
+    _spatialEncodeDelta = (prev, curr) => {
+      try {
+        return (exports.spatial_encode_delta as any)(prev, curr);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
+
+  if (exports.context_score_envelope) {
+    _contextScoreEnvelope = (envelope, nowMs) => {
+      try {
+        const res = (exports.context_score_envelope as any)(envelope, nowMs);
+        return normalizeWasmJsValue(res);
+      } catch (err) {
+        throw normalizeWasmJsValue(err);
+      }
+    };
+  }
 }
 
 /**
@@ -583,6 +724,20 @@ export const lnmp = {
   // Diagnostic: return whether the current parse implementation is backed by WASM
   isWasmBacked: () => _wasmLoaded,
   getStats: () => ({ fallbackCount: _fallbackCount, wasmErrorCount: _wasmErrorCount }),
+
+  // New exports from meta crate (13 functions)
+  envelopeWrap: (record: any, metadata: any) => _envelopeWrap(record, metadata),
+  envelopeToBinaryTlv: (metadata: any) => _envelopeToBinaryTlv(metadata),
+  envelopeFromBinaryTlv: (bytes: Uint8Array) => _envelopeFromBinaryTlv(bytes),
+  routingDecide: (message: any, nowMs: number) => _routingDecide(message, nowMs),
+  routingImportanceScore: (message: any, nowMs: number) => _routingImportanceScore(message, nowMs),
+  transportToHttpHeaders: (envelope: any) => _transportToHttpHeaders(envelope),
+  transportFromHttpHeaders: (headers: any) => _transportFromHttpHeaders(headers),
+  embeddingComputeDelta: (base: number[], updated: number[]) => _embeddingComputeDelta(base, updated),
+  embeddingApplyDelta: (base: number[], delta: any) => _embeddingApplyDelta(base, delta),
+  spatialEncodeSnapshot: (positions: number[]) => _spatialEncodeSnapshot(positions),
+  spatialEncodeDelta: (prev: number[], curr: number[]) => _spatialEncodeDelta(prev, curr),
+  contextScoreEnvelope: (envelope: any, nowMs: number) => _contextScoreEnvelope(envelope, nowMs),
 };
 
 function normalizeForEncode(obj: any) {

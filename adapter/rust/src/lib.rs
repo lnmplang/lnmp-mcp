@@ -3,15 +3,26 @@ use serde_wasm_bindgen::{to_value, from_value};
 use serde_json::{Value as JsonValue, Number as JsonNumber, json};
 use serde::Deserialize;
 
-use lnmp_core::{LnmpRecord, LnmpField, LnmpValue};
-use lnmp_codec::{Parser, Encoder};
-use lnmp_codec::binary::{BinaryEncoder, BinaryDecoder};
-use lnmp_codec::binary::encoder::EncoderConfig as BinaryEncoderConfig;
-use lnmp_codec::config::TextInputMode;
-use lnmp_sanitize::{sanitize_lnmp_text, SanitizationConfig, SanitizationLevel};
+// Updated to use unified lnmp meta crate
+use lnmp::core::{LnmpRecord, LnmpField, LnmpValue};
+use lnmp::codec::{Parser, Encoder};
+use lnmp::codec::binary::{BinaryEncoder, BinaryDecoder};
+use lnmp::codec::binary::encoder::EncoderConfig as BinaryEncoderConfig;
+use lnmp::codec::config::TextInputMode;
+use lnmp::sanitize::{sanitize_lnmp_text, SanitizationConfig, SanitizationLevel};
+
+// New module imports from meta crate
+use lnmp::envelope::{EnvelopeBuilder, EnvelopeMetadata, LnmpEnvelope};
+use lnmp::envelope::binary_codec::{TlvEncoder, TlvDecoder};
+use lnmp::net::{MessageKind, NetMessage, RoutingPolicy, RoutingDecision};
+use lnmp::transport::{http, kafka, grpc, nats};
+use lnmp::embedding::{VectorDelta, Vector};
+use lnmp::spatial::protocol::{SpatialFrame, SpatialStreamer};
+use lnmp::sfe::{ContextScorer, ContextScorerConfig};
+
 use serde_yaml;
 // Include the example semantic dictionary at compile time to return authoritative schema info
-const EXAMPLE_SEMANTIC_DICTIONARY_YAML: &str = include_str!("../../../../examples/examples/semantic_dictionary.yaml");
+const EXAMPLE_SEMANTIC_DICTIONARY_YAML: &str = include_str!("../../../../../examples/examples/semantic_dictionary.yaml");
 
 /// Convert LnmpRecord into serde_json::Value object for wasm
 fn record_to_json(record: &LnmpRecord) -> JsonValue {
@@ -26,6 +37,14 @@ fn record_to_json(record: &LnmpRecord) -> JsonValue {
             LnmpValue::StringArray(arr) => JsonValue::Array(arr.iter().map(|s| JsonValue::String(s.clone())).collect()),
             LnmpValue::NestedRecord(nr) => record_to_json(nr),
             LnmpValue::NestedArray(arr) => JsonValue::Array(arr.iter().map(|r| record_to_json(r)).collect()),
+            // New v0.6 types
+            LnmpValue::IntArray(arr) => JsonValue::Array(arr.iter().map(|i| JsonValue::Number(JsonNumber::from(*i))).collect()),
+            LnmpValue::FloatArray(arr) => JsonValue::Array(arr.iter().map(|f| JsonValue::Number(JsonNumber::from_f64(*f).unwrap_or(JsonNumber::from(0)))).collect()),
+            LnmpValue::BoolArray(arr) => JsonValue::Array(arr.iter().map(|b| JsonValue::Bool(*b)).collect()),
+            LnmpValue::Embedding(_) | LnmpValue::EmbeddingDelta(_) | LnmpValue::QuantizedEmbedding(_) => {
+                // For now, serialize complex types as empty objects
+                JsonValue::Object(serde_json::Map::new())
+            }
         };
         map.insert(key, val);
     }
@@ -42,8 +61,8 @@ fn js_error(code: &str, message: &str, details: Option<JsonValue>) -> JsValue {
     to_value(&JsonValue::Object(map)).unwrap_or_else(|_| JsValue::from_str(message))
 }
 
-fn map_lnmp_err(err: &lnmp_codec::error::LnmpError) -> (String, Option<JsonValue>) {
-    use lnmp_codec::error::LnmpError::*;
+fn map_lnmp_err(err: &lnmp::codec::error::LnmpError) -> (String, Option<JsonValue>) {
+    use lnmp::codec::error::LnmpError::*;
     match err {
         InvalidCharacter { char, line, column } => (
             "INVALID_CHARACTER".to_string(),
@@ -109,11 +128,15 @@ fn map_lnmp_err(err: &lnmp_codec::error::LnmpError) -> (String, Option<JsonValue
             "UNCLOSED_NESTED_STRUCTURE".to_string(),
             Some(json!({"structure_type": structure_type, "opened_at_line": opened_at_line, "opened_at_column": opened_at_column, "line": line, "column": column})),
         ),
+        ValidationError(reason) => (
+            "VALIDATION_ERROR".to_string(),
+            Some(json!({"reason": reason})),
+        ),
     }
 }
 
-fn map_binary_err(err: &lnmp_codec::binary::error::BinaryError) -> (String, Option<JsonValue>) {
-    use lnmp_codec::binary::error::BinaryError::*;
+fn map_binary_err(err: &lnmp::codec::binary::error::BinaryError) -> (String, Option<JsonValue>) {
+    use lnmp::codec::binary::error::BinaryError::*;
     match err {
         UnsupportedVersion { found, supported } => (
             "UNSUPPORTED_VERSION".to_string(),
@@ -350,6 +373,11 @@ pub fn debug_explain(text: &str) -> Result<String, JsValue> {
             LnmpValue::StringArray(arr) => arr.join(","),
             LnmpValue::NestedRecord(nr) => format!("{{{}}}", serde_json::to_string(&record_to_json(nr)).unwrap_or_default()),
             LnmpValue::NestedArray(arr) => format!("[{}]", arr.iter().map(|r| serde_json::to_string(&record_to_json(r)).unwrap_or_default()).collect::<Vec<_>>().join(",")),
+            // New v0.6 types
+            LnmpValue::IntArray(arr) => format!("[{}]", arr.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")),
+            LnmpValue::FloatArray(arr) => format!("[{}]", arr.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(",")),
+            LnmpValue::BoolArray(arr) => format!("[{}]", arr.iter().map(|b| if *b { "1" } else { "0" }).collect::<Vec<_>>().join(",")),
+            LnmpValue::Embedding(_) | LnmpValue::EmbeddingDelta(_) | LnmpValue::QuantizedEmbedding(_) => "[complex]".to_string(),
         };
         lines.push(format!("F{}={}    # {}", f.fid, val, f.fid));
     }
@@ -368,13 +396,454 @@ pub fn sanitize(text: &str, options: Option<JsValue>) -> Result<JsValue, JsValue
     });
     to_value(&out).map_err(|e| JsValue::from_str(&e.to_string()))
 }
+
+// ============================================================================
+// ENVELOPE OPERATIONS - Operational Metadata Management
+// ============================================================================
+
+/// Wraps a record with envelope metadata
+#[wasm_bindgen]
+pub fn envelope_wrap(record_json: JsValue, metadata_json: JsValue) -> Result<JsValue, JsValue> {
+    let record_val: JsonValue = from_value(record_json)
+        .map_err(|e| js_error("INVALID_RECORD", &format!("Invalid record: {}", e), None))?;
+    let record = json_to_record(&record_val)?;
+    
+    let metadata_val: JsonValue = from_value(metadata_json)
+        .map_err(|e| js_error("INVALID_METADATA", &format!("Invalid metadata: {}", e), None))?;
+    
+    let mut metadata = EnvelopeMetadata::default();
+    if let Some(obj) = metadata_val.as_object() {
+        if let Some(ts) = obj.get("timestamp").and_then(|v| v.as_u64()) {
+            metadata.timestamp = Some(ts);
+        }
+        if let Some(src) = obj.get("source").and_then(|v| v.as_str()) {
+            metadata.source = Some(src.to_string());
+        }
+        if let Some(trace_id) = obj.get("trace_id").and_then(|v| v.as_str()) {
+            metadata.trace_id = Some(trace_id.to_string());
+        }
+        if let Some(seq) = obj.get("sequence").and_then(|v| v.as_u64()) {
+            metadata.sequence = Some(seq);
+        }
+    }
+    
+    let envelope = LnmpEnvelope { record, metadata };
+    
+    let result = json!({
+        "record": record_to_json(&envelope.record),
+        "metadata": {
+            "timestamp": envelope.metadata.timestamp,
+            "source": envelope.metadata.source,
+            "trace_id": envelope.metadata.trace_id,
+            "sequence": envelope.metadata.sequence,
+        }
+    });
+    
+    to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Encodes envelope metadata to binary TLV format
+#[wasm_bindgen]
+pub fn envelope_to_binary_tlv(metadata_json: JsValue) -> Result<Vec<u8>, JsValue> {
+    let metadata_val: JsonValue = from_value(metadata_json)
+        .map_err(|e| js_error("INVALID_METADATA", &format!("Invalid metadata: {}", e), None))?;
+    
+    let mut metadata = EnvelopeMetadata::default();
+    if let Some(obj) = metadata_val.as_object() {
+        if let Some(ts) = obj.get("timestamp").and_then(|v| v.as_u64()) {
+            metadata.timestamp = Some(ts);
+        }
+        if let Some(src) = obj.get("source").and_then(|v| v.as_str()) {
+            metadata.source = Some(src.to_string());
+        }
+        if let Some(trace_id) = obj.get("trace_id").and_then(|v| v.as_str()) {
+            metadata.trace_id = Some(trace_id.to_string());
+        }
+        if let Some(seq) = obj.get("sequence").and_then(|v| v.as_u64()) {
+            metadata.sequence = Some(seq);
+        }
+    }
+    
+    TlvEncoder::encode(&metadata)
+        .map_err(|e| JsValue::from_str(&format!("TLV encoding error: {}", e)))
+}
+
+/// Decodes envelope metadata from binary TLV format
+#[wasm_bindgen]
+pub fn envelope_from_binary_tlv(tlv_bytes: &[u8]) -> Result<JsValue, JsValue> {
+    let metadata = TlvDecoder::decode(tlv_bytes)
+        .map_err(|e| JsValue::from_str(&format!("TLV decoding error: {}", e)))?;
+    
+    let result = json!({
+        "timestamp": metadata.timestamp,
+        "source": metadata.source,
+        "trace_id": metadata.trace_id,
+        "sequence": metadata.sequence,
+    });
+    
+    to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+// ============================================================================
+// NETWORK ROUTING - Intelligent Message Routing Decisions
+// ============================================================================
+
+/// Makes a routing decision for a network message (SendToLLM, ProcessLocally, Drop)
+#[wasm_bindgen]
+pub fn routing_decide(msg_json: JsValue, now_ms: f64) -> Result<String, JsValue> {
+    let msg_val: JsonValue = from_value(msg_json)
+        .map_err(|e| js_error("INVALID_MESSAGE", &format!("Invalid message: {}", e), None))?;
+    
+    let obj = msg_val.as_object()
+        .ok_or_else(|| js_error("INVALID_MESSAGE", "Message must be an object", None))?;
+    
+    // Parse envelope
+    let envelope_val = obj.get("envelope")
+        .ok_or_else(|| js_error("MISSING_ENVELOPE", "Missing envelope field", None))?;
+    let record_val = envelope_val.get("record")
+        .ok_or_else(|| js_error("MISSING_RECORD", "Missing record in envelope", None))?;
+    let record = json_to_record(record_val)?;
+    
+    let mut metadata = EnvelopeMetadata::default();
+    if let Some(meta_obj) = envelope_val.get("metadata").and_then(|v| v.as_object()) {
+        if let Some(ts) = meta_obj.get("timestamp").and_then(|v| v.as_u64()) {
+            metadata.timestamp = Some(ts);
+        }
+        if let Some(src) = meta_obj.get("source").and_then(|v| v.as_str()) {
+            metadata.source = Some(src.to_string());
+        }
+    }
+    
+    let envelope = LnmpEnvelope { record, metadata };
+    
+    // Parse message kind
+    let kind_str = obj.get("kind").and_then(|v| v.as_str())
+        .unwrap_or("Event");
+    let kind = match kind_str {
+        "Event" => MessageKind::Event,
+        "State" => MessageKind::State,
+        "Command" => MessageKind::Command,
+        "Query" => MessageKind::Query,
+        "Alert" => MessageKind::Alert,
+        _ => MessageKind::Event,
+    };
+    
+    let priority = obj.get("priority").and_then(|v| v.as_u64()).unwrap_or(100) as u8;
+    let ttl_ms = obj.get("ttl_ms").and_then(|v| v.as_u64()).unwrap_or(5000) as u32;
+    
+    let net_msg = NetMessage::with_qos(envelope, kind, priority, ttl_ms);
+    
+    let policy = RoutingPolicy::default();
+    let decision = policy.decide(&net_msg, now_ms as u64)
+        .map_err(|e| JsValue::from_str(&format!("Routing error: {}", e)))?;
+    
+    let result = match decision {
+        RoutingDecision::SendToLLM => "SendToLLM",
+        RoutingDecision::ProcessLocally => "ProcessLocally",
+        RoutingDecision::Drop => "Drop",
+    };
+    
+    Ok(result.to_string())
+}
+
+/// Computes importance score for a message (0.0-1.0)
+#[wasm_bindgen]
+pub fn routing_importance_score(msg_json: JsValue, now_ms: f64) -> Result<f64, JsValue> {
+    let msg_val: JsonValue = from_value(msg_json)
+        .map_err(|e| js_error("INVALID_MESSAGE", &format!("Invalid message: {}", e), None))?;
+    
+    let obj = msg_val.as_object()
+        .ok_or_else(|| js_error("INVALID_MESSAGE", "Message must be an object", None))?;
+    
+    // Parse envelope (simplified version)
+    let envelope_val = obj.get("envelope")
+        .ok_or_else(|| js_error("MISSING_ENVELOPE", "Missing envelope field", None))?;
+    let record_val = envelope_val.get("record")
+        .ok_or_else(|| js_error("MISSING_RECORD", "Missing record in envelope", None))?;
+    let record = json_to_record(record_val)?;
+    
+    let mut metadata = EnvelopeMetadata::default();
+    if let Some(meta_obj) = envelope_val.get("metadata").and_then(|v| v.as_object()) {
+        if let Some(ts) = meta_obj.get("timestamp").and_then(|v| v.as_u64()) {
+            metadata.timestamp = Some(ts);
+        }
+    }
+    
+    let envelope = LnmpEnvelope { record, metadata };
+    let kind_str = obj.get("kind").and_then(|v| v.as_str()).unwrap_or("Event");
+    let kind = match kind_str {
+        "Event" => MessageKind::Event,
+        "State" => MessageKind::State,
+        "Command" => MessageKind::Command,
+        "Query" => MessageKind::Query,
+        "Alert" => MessageKind::Alert,
+        _ => MessageKind::Event,
+    };
+    
+    let priority = obj.get("priority").and_then(|v| v.as_u64()).unwrap_or(100) as u8;
+    let ttl_ms = obj.get("ttl_ms").and_then(|v| v.as_u64()).unwrap_or(5000) as u32;
+    
+    let net_msg = NetMessage::with_qos(envelope, kind, priority, ttl_ms);
+    let policy = RoutingPolicy::default();
+    
+    policy.base_importance(&net_msg, now_ms as u64)
+        .map_err(|e| JsValue::from_str(&format!("Importance score error: {}", e)))
+}
+
+// ============================================================================
+// TRANSPORT HEADERS - Multi-Protocol Header Mappings
+// ============================================================================
+
+/// Converts envelope to HTTP headers
+#[wasm_bindgen]
+pub fn transport_to_http_headers(envelope_json: JsValue) -> Result<JsValue, JsValue> {
+    let envelope_val: JsonValue = from_value(envelope_json)
+        .map_err(|e| js_error("INVALID_ENVELOPE", &format!("Invalid envelope: {}", e), None))?;
+    
+    let record_val = envelope_val.get("record")
+        .ok_or_else(|| js_error("MISSING_RECORD", "Missing record in envelope", None))?;
+    let record = json_to_record(record_val)?;
+    
+    let mut metadata = EnvelopeMetadata::default();
+    if let Some(meta_obj) = envelope_val.get("metadata").and_then(|v| v.as_object()) {
+        if let Some(ts) = meta_obj.get("timestamp").and_then(|v| v.as_u64()) {
+            metadata.timestamp = Some(ts);
+        }
+        if let Some(src) = meta_obj.get("source").and_then(|v| v.as_str()) {
+            metadata.source = Some(src.to_string());
+        }
+        if let Some(trace_id) = meta_obj.get("trace_id").and_then(|v| v.as_str()) {
+            metadata.trace_id = Some(trace_id.to_string());
+        }
+        if let Some(seq) = meta_obj.get("sequence").and_then(|v| v.as_u64()) {
+            metadata.sequence = Some(seq);
+        }
+    }
+    
+    let envelope = LnmpEnvelope { record, metadata };
+    
+    // Convert to HTTP headers (simplified - returns JSON map)
+    let mut headers = serde_json::Map::new();
+    
+    if let Some(ts) = envelope.metadata.timestamp {
+        headers.insert("X-LNMP-Timestamp".to_string(), JsonValue::String(ts.to_string()));
+    }
+    if let Some(ref src) = envelope.metadata.source {
+        headers.insert("X-LNMP-Source".to_string(), JsonValue::String(src.clone()));
+    }
+    if let Some(ref trace_id) = envelope.metadata.trace_id {
+        headers.insert("X-LNMP-Trace-Id".to_string(), JsonValue::String(trace_id.clone()));
+        // Generate W3C traceparent
+        let traceparent = format!("00-{}-{}-01", 
+            trace_id.chars().take(32).collect::<String>().to_lowercase(),
+            "0123456789abcdef");
+        headers.insert("traceparent".to_string(), JsonValue::String(traceparent));
+    }
+    if let Some(seq) = envelope.metadata.sequence {
+        headers.insert("X-LNMP-Sequence".to_string(), JsonValue::String(seq.to_string()));
+    }
+    
+    to_value(&JsonValue::Object(headers)).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Parses HTTP headers to envelope metadata
+#[wasm_bindgen]
+pub fn transport_from_http_headers(headers_json: JsValue) -> Result<JsValue, JsValue> {
+    let headers_val: JsonValue = from_value(headers_json)
+        .map_err(|e| js_error("INVALID_HEADERS", &format!("Invalid headers: {}", e), None))?;
+    
+    let headers_obj = headers_val.as_object()
+        .ok_or_else(|| js_error("INVALID_HEADERS", "Headers must be an object", None))?;
+    
+    let mut metadata = EnvelopeMetadata::default();
+    
+    if let Some(ts_str) = headers_obj.get("X-LNMP-Timestamp").and_then(|v| v.as_str()) {
+        if let Ok(ts) = ts_str.parse::<u64>() {
+            metadata.timestamp = Some(ts);
+        }
+    }
+    if let Some(src) = headers_obj.get("X-LNMP-Source").and_then(|v| v.as_str()) {
+        metadata.source = Some(src.to_string());
+    }
+    if let Some(trace_id) = headers_obj.get("X-LNMP-Trace-Id").and_then(|v| v.as_str()) {
+        metadata.trace_id = Some(trace_id.to_string());
+    }
+    if let Some(seq_str) = headers_obj.get("X-LNMP-Sequence").and_then(|v| v.as_str()) {
+        if let Ok(seq) = seq_str.parse::<u64>() {
+            metadata.sequence = Some(seq);
+        }
+    }
+    
+    let result = json!({
+        "timestamp": metadata.timestamp,
+        "source": metadata.source,
+        "trace_id": metadata.trace_id,
+        "sequence": metadata.sequence,
+    });
+    
+    to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+// ============================================================================
+// EMBEDDING OPERATIONS - Vector Delta Compression
+// ============================================================================
+
+/// Computes delta between two embedding vectors
+#[wasm_bindgen]
+pub fn embedding_compute_delta(base: Vec<f32>, updated: Vec<f32>) -> Result<JsValue, JsValue> {
+    if base.len() != updated.len() {
+        return Err(js_error("DIMENSION_MISMATCH", 
+            &format!("Base and updated vectors must have same dimension: {} vs {}", base.len(), updated.len()), 
+            None));
+    }
+    
+    let base_vec = Vector::from_f32(base.clone());
+    let updated_vec = Vector::from_f32(updated.clone());
+    
+    let delta = VectorDelta::from_vectors(&base_vec, &updated_vec, 0)
+        .map_err(|e| JsValue::from_str(&format!("Delta computation error: {}", e)))?;
+    
+    let changes: Vec<_> = delta.changes.iter().map(|change| {
+        json!({
+            "index": change.index,
+            "delta": change.delta,
+        })
+    }).collect();
+    
+    let compression_ratio = delta.change_ratio(base_vec.dim);
+    
+    let result = json!({
+        "changes": changes,
+        "compressionRatio": compression_ratio,
+        "dimension": base.len(),
+    });
+    
+    to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Applies delta to base vector
+#[wasm_bindgen]
+pub fn embedding_apply_delta(base: Vec<f32>, delta_json: JsValue) -> Result<Vec<f32>, JsValue> {
+    let delta_val: JsonValue = from_value(delta_json)
+        .map_err(|e| js_error("INVALID_DELTA", &format!("Invalid delta: {}", e), None))?;
+    
+    let changes_arr = delta_val.get("changes").and_then(|v| v.as_array())
+        .ok_or_else(|| js_error("MISSING_CHANGES", "Missing changes array in delta", None))?;
+    
+    let mut result = base.clone();
+    
+    for change in changes_arr {
+        let index = change.get("index").and_then(|v| v.as_u64())
+            .ok_or_else(|| js_error("INVALID_CHANGE", "Missing or invalid index", None))? as usize;
+        let delta_val = change.get("delta").and_then(|v| v.as_f64())
+            .ok_or_else(|| js_error("INVALID_CHANGE", "Missing or invalid delta", None))? as f32;
+        
+        if index < result.len() {
+            result[index] += delta_val; // Apply delta as addition
+        }
+    }
+    
+    Ok(result)
+}
+
+// ============================================================================
+// SPATIAL STREAMING - 3D Position Encoding
+// ============================================================================
+
+/// Encodes spatial positions as snapshot
+#[wasm_bindgen]
+pub fn spatial_encode_snapshot(positions: Vec<f32>) -> Result<Vec<u8>, JsValue> {
+    // Simplified snapshot encoding (just raw bytes for now)
+    // In real implementation, would use SpatialFrame::Snapshot
+    let mut result = Vec::new();
+    result.push(0x00); // Snapshot marker
+    
+    for pos in positions {
+        result.extend_from_slice(&pos.to_le_bytes());
+    }
+    
+    Ok(result)
+}
+
+/// Encodes spatial delta between two position arrays
+#[wasm_bindgen]
+pub fn spatial_encode_delta(prev: Vec<f32>, curr: Vec<f32>) -> Result<Vec<u8>, JsValue> {
+    if prev.len() != curr.len() {
+        return Err(js_error("DIMENSION_MISMATCH", 
+            &format!("Previous and current position arrays must have same length: {} vs {}", prev.len(), curr.len()), 
+            None));
+    }
+    
+    // Simplified delta encoding
+    let mut result = Vec::new();
+    result.push(0x01); // Delta marker
+    
+    let mut changed_count = 0u16;
+    let count_pos = result.len();
+    result.extend_from_slice(&changed_count.to_le_bytes());
+    
+    for (i, (p, c)) in prev.iter().zip(curr.iter()).enumerate() {
+        if (p - c).abs() > 0.001 {
+            result.extend_from_slice(&(i as u16).to_le_bytes());
+            result.extend_from_slice(&c.to_le_bytes());
+            changed_count += 1;
+        }
+    }
+    
+    // Update count
+    result[count_pos..count_pos+2].copy_from_slice(&changed_count.to_le_bytes());
+    
+    Ok(result)
+}
+
+// ============================================================================
+// CONTEXT SCORING - SFE Freshness and Importance
+// ============================================================================
+
+/// Scores envelope for LLM context selection
+#[wasm_bindgen]
+pub fn context_score_envelope(envelope_json: JsValue, now_ms: f64) -> Result<JsValue, JsValue> {
+    let envelope_val: JsonValue = from_value(envelope_json)
+        .map_err(|e| js_error("INVALID_ENVELOPE", &format!("Invalid envelope: {}", e), None))?;
+    
+    let record_val = envelope_val.get("record")
+        .ok_or_else(|| js_error("MISSING_RECORD", "Missing record in envelope", None))?;
+    let record = json_to_record(record_val)?;
+    
+    let mut metadata = EnvelopeMetadata::default();
+    if let Some(meta_obj) = envelope_val.get("metadata").and_then(|v| v.as_object()) {
+        if let Some(ts) = meta_obj.get("timestamp").and_then(|v| v.as_u64()) {
+            metadata.timestamp = Some(ts);
+        }
+        if let Some(src) = meta_obj.get("source").and_then(|v| v.as_str()) {
+            metadata.source = Some(src.to_string());
+        }
+    }
+    
+    let envelope = LnmpEnvelope { record, metadata };
+    
+    let scorer = ContextScorer::new();
+    let profile = scorer.score_envelope(&envelope, now_ms as u64);
+    
+    let result = json!({
+        "freshnessScore": profile.freshness_score,
+        "importance": profile.importance,
+        "riskLevel": format!("{:?}", profile.risk_level),
+        "confidence": profile.confidence,
+        "compositeScore": profile.composite_score(),
+    });
+    
+    to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
 // End of exports
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lnmp_codec::binary::BinaryEncoder;
-    use lnmp_codec::binary::error::BinaryError;
+    use lnmp::codec::binary::BinaryEncoder;
+    use lnmp::codec::binary::error::BinaryError;
 
     #[test]
     fn encode_text_with_unquoted_inner_quotes_fails() {
