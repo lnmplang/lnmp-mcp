@@ -182,13 +182,291 @@ function takeFromExternrefTable0(idx) {
     return value;
 }
 /**
- * @param {string} _mode
+ * @param {string} text
+ * @returns {Uint8Array}
+ */
+exports.encode_binary_lenient = function(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.encode_binary_lenient(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+};
+
+/**
+ * Computes importance score for a message (0.0-1.0)
+ * @param {any} msg_json
+ * @param {number} now_ms
+ * @returns {number}
+ */
+exports.routing_importance_score = function(msg_json, now_ms) {
+    const ret = wasm.routing_importance_score(msg_json, now_ms);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0];
+};
+
+/**
+ * Scores envelope for LLM context selection
+ * @param {any} envelope_json
+ * @param {number} now_ms
  * @returns {any}
  */
-exports.schema_describe = function(_mode) {
-    const ptr0 = passStringToWasm0(_mode, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+exports.context_score_envelope = function(envelope_json, now_ms) {
+    const ret = wasm.context_score_envelope(envelope_json, now_ms);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+/**
+ * Encodes envelope metadata to binary TLV format
+ * @param {any} metadata_json
+ * @returns {Uint8Array}
+ */
+exports.envelope_to_binary_tlv = function(metadata_json) {
+    const ret = wasm.envelope_to_binary_tlv(metadata_json);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v1;
+};
+
+/**
+ * @param {string} text
+ * @param {any | null} [options]
+ * @returns {any}
+ */
+exports.sanitize = function(text, options) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.schema_describe(ptr0, len0);
+    const ret = wasm.sanitize(ptr0, len0, isLikeNone(options) ? 0 : addToExternrefTable0(options));
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+/**
+ * Decodes envelope metadata from binary TLV format
+ * @param {Uint8Array} tlv_bytes
+ * @returns {any}
+ */
+exports.envelope_from_binary_tlv = function(tlv_bytes) {
+    const ptr0 = passArray8ToWasm0(tlv_bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.envelope_from_binary_tlv(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+/**
+ * Wraps a record with envelope metadata
+ * @param {any} record_json
+ * @param {any} metadata_json
+ * @returns {any}
+ */
+exports.envelope_wrap = function(record_json, metadata_json) {
+    const ret = wasm.envelope_wrap(record_json, metadata_json);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+/**
+ * @param {string} text
+ * @returns {any}
+ */
+exports.parse = function(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.parse(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+/**
+ * @param {string} text
+ * @returns {Uint8Array}
+ */
+exports.encode_binary = function(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.encode_binary(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+};
+
+let cachedFloat32ArrayMemory0 = null;
+
+function getFloat32ArrayMemory0() {
+    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
+        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
+    }
+    return cachedFloat32ArrayMemory0;
+}
+
+function passArrayF32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getFloat32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+/**
+ * Encodes spatial positions as snapshot
+ * @param {Float32Array} positions
+ * @returns {Uint8Array}
+ */
+exports.spatial_encode_snapshot = function(positions) {
+    const ptr0 = passArrayF32ToWasm0(positions, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.spatial_encode_snapshot(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+};
+
+/**
+ * Encodes spatial delta between two position arrays
+ * @param {Float32Array} prev
+ * @param {Float32Array} curr
+ * @returns {Uint8Array}
+ */
+exports.spatial_encode_delta = function(prev, curr) {
+    const ptr0 = passArrayF32ToWasm0(prev, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(curr, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.spatial_encode_delta(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+};
+
+/**
+ * Makes a routing decision for a network message (SendToLLM, ProcessLocally, Drop)
+ * @param {any} msg_json
+ * @param {number} now_ms
+ * @returns {string}
+ */
+exports.routing_decide = function(msg_json, now_ms) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ret = wasm.routing_decide(msg_json, now_ms);
+        var ptr1 = ret[0];
+        var len1 = ret[1];
+        if (ret[3]) {
+            ptr1 = 0; len1 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred2_0 = ptr1;
+        deferred2_1 = len1;
+        return getStringFromWasm0(ptr1, len1);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+};
+
+let cachedFloat64ArrayMemory0 = null;
+
+function getFloat64ArrayMemory0() {
+    if (cachedFloat64ArrayMemory0 === null || cachedFloat64ArrayMemory0.byteLength === 0) {
+        cachedFloat64ArrayMemory0 = new Float64Array(wasm.memory.buffer);
+    }
+    return cachedFloat64ArrayMemory0;
+}
+
+function passArrayF64ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 8, 8) >>> 0;
+    getFloat64ArrayMemory0().set(arg, ptr / 8);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function getArrayF64FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat64ArrayMemory0().subarray(ptr / 8, ptr / 8 + len);
+}
+/**
+ * Applies delta to base vector
+ * @param {Float64Array} base
+ * @param {any} delta_json
+ * @returns {Float64Array}
+ */
+exports.embedding_apply_delta = function(base, delta_json) {
+    const ptr0 = passArrayF64ToWasm0(base, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.embedding_apply_delta(ptr0, len0, delta_json);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+    return v2;
+};
+
+/**
+ * @param {Uint8Array} bin
+ * @returns {string}
+ */
+exports.decode_binary = function(bin) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passArray8ToWasm0(bin, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.decode_binary(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+};
+
+/**
+ * Parses HTTP headers to envelope metadata
+ * @param {any} headers_json
+ * @returns {any}
+ */
+exports.transport_from_http_headers = function(headers_json) {
+    const ret = wasm.transport_from_http_headers(headers_json);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -218,35 +496,49 @@ exports.encode = function(obj) {
     }
 };
 
-function passArray8ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 1, 1) >>> 0;
-    getUint8ArrayMemory0().set(arg, ptr / 1);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
-}
 /**
- * @param {Uint8Array} bin
- * @returns {string}
+ * Computes delta between two embedding vectors
+ * @param {Float32Array} base
+ * @param {Float32Array} updated
+ * @returns {any}
  */
-exports.decode_binary = function(bin) {
-    let deferred3_0;
-    let deferred3_1;
-    try {
-        const ptr0 = passArray8ToWasm0(bin, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.decode_binary(ptr0, len0);
-        var ptr2 = ret[0];
-        var len2 = ret[1];
-        if (ret[3]) {
-            ptr2 = 0; len2 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred3_0 = ptr2;
-        deferred3_1 = len2;
-        return getStringFromWasm0(ptr2, len2);
-    } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+exports.embedding_compute_delta = function(base, updated) {
+    const ptr0 = passArrayF32ToWasm0(base, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArrayF32ToWasm0(updated, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.embedding_compute_delta(ptr0, len0, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
     }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+/**
+ * Converts envelope to HTTP headers
+ * @param {any} envelope_json
+ * @returns {any}
+ */
+exports.transport_to_http_headers = function(envelope_json) {
+    const ret = wasm.transport_to_http_headers(envelope_json);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+};
+
+/**
+ * @param {string} text
+ * @returns {any}
+ */
+exports.parse_lenient = function(text) {
+    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.parse_lenient(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
 };
 
 /**
@@ -275,74 +567,13 @@ exports.debug_explain = function(text) {
 };
 
 /**
- * @param {string} text
- * @returns {Uint8Array}
- */
-exports.encode_binary_lenient = function(text) {
-    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.encode_binary_lenient(ptr0, len0);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v2;
-};
-
-/**
- * @param {string} text
+ * @param {string} _mode
  * @returns {any}
  */
-exports.parse = function(text) {
-    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+exports.schema_describe = function(_mode) {
+    const ptr0 = passStringToWasm0(_mode, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.parse(ptr0, len0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-};
-
-/**
- * @param {string} text
- * @param {any | null} [options]
- * @returns {any}
- */
-exports.sanitize = function(text, options) {
-    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.sanitize(ptr0, len0, isLikeNone(options) ? 0 : addToExternrefTable0(options));
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-};
-
-/**
- * @param {string} text
- * @returns {Uint8Array}
- */
-exports.encode_binary = function(text) {
-    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.encode_binary(ptr0, len0);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v2;
-};
-
-/**
- * @param {string} text
- * @returns {any}
- */
-exports.parse_lenient = function(text) {
-    const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.parse_lenient(ptr0, len0);
+    const ret = wasm.schema_describe(ptr0, len0);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

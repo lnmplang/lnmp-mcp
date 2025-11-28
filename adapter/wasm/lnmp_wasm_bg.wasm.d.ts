@@ -1,15 +1,27 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const context_score_envelope: (a: any, b: number) => [number, number, number];
 export const debug_explain: (a: number, b: number) => [number, number, number, number];
 export const decode_binary: (a: number, b: number) => [number, number, number, number];
+export const embedding_apply_delta: (a: number, b: number, c: any) => [number, number, number, number];
+export const embedding_compute_delta: (a: number, b: number, c: number, d: number) => [number, number, number];
 export const encode: (a: any) => [number, number, number, number];
 export const encode_binary: (a: number, b: number) => [number, number, number, number];
 export const encode_binary_lenient: (a: number, b: number) => [number, number, number, number];
+export const envelope_from_binary_tlv: (a: number, b: number) => [number, number, number];
+export const envelope_to_binary_tlv: (a: any) => [number, number, number, number];
+export const envelope_wrap: (a: any, b: any) => [number, number, number];
 export const parse: (a: number, b: number) => [number, number, number];
 export const parse_lenient: (a: number, b: number) => [number, number, number];
+export const routing_decide: (a: any, b: number) => [number, number, number, number];
+export const routing_importance_score: (a: any, b: number) => [number, number, number];
 export const sanitize: (a: number, b: number, c: number) => [number, number, number];
 export const schema_describe: (a: number, b: number) => [number, number, number];
+export const spatial_encode_delta: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const spatial_encode_snapshot: (a: number, b: number) => [number, number, number, number];
+export const transport_from_http_headers: (a: any) => [number, number, number];
+export const transport_to_http_headers: (a: any) => [number, number, number];
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_exn_store: (a: number) => void;

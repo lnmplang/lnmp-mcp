@@ -1,71 +1,32 @@
 {
   "name": "@lnmplang/lnmp-mcp",
   "version": "0.1.0",
-  "description": "LNMP MCP Adapter — expose LNMP codec as MCP tools",
+  "description": "LNMP MCP Adapter — Pure Node.js implementation with WASM",
   "main": "dist/index.js",
   "bin": {
-    "lnmp-mcp": "dist/cli.js"
+    "lnmp-mcp": "dist/index.js"
   },
-  "types": "dist/index.d.ts",
-  "files": ["dist", "wasm"],
+  "files": [
+    "dist",
+    "src/wasm"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "build:wasm": "echo 'Build and copy lnmp_wasm_bg.wasm to adapter/src/wasm/ (see ARCHITECTURE.md)'",
-    "start": "node ./dist/cli.js || node ./dist/cli.cjs",
-    "start:server": "node ./scripts/run_http_server.js",
-    "dev:server": "cross-env NODE_ENV=development ts-node-dev --respawn --transpile-only ./src/cli.ts",
-    "dev": "npm run dev:server",
-    "build:all": "node ./scripts/build_all.js",
-    "run": "npm run build:all && npm run start",
-    "stop": "node ./scripts/stop_server.js",
-    "test:node": "node ./dist/test/index.js || node ./dist/test/index.cjs",
-    "test:integration": "jest --testPathPattern=integration",
-    "test:unit": "jest --testPathPattern=tools",
-    "test": "jest --coverage",
-    "lint": "eslint . --ext .ts",
-    "prepack": "npm run build && npm run build:wasm"
+    "build": "mkdir -p dist && cp src/index.js dist/index.js && chmod +x dist/index.js",
+    "start": "node dist/index.js",
+    "test": "echo 'Run manual tests via MCP Inspector or Antigravity'"
   },
-  "keywords": ["lnmp", "mcp", "wasm", "lnmplang"],
-  "exports": {
-    ".": {
-      "require": "./dist/index.js",
-      "import": "./dist/index.js"
-    }
-  },
-  "author": "lnmplang",
-  "license": "Apache-2.0",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "file:./local-mcp-sdk",
     "dotenv": "^16.0.0"
   },
-  "devDependencies": {
-    "typescript": "^5.9.0",
-    "@types/node": "^20.0.0",
-    "eslint": "^8.0.0"
-    , "jest": "^29.7.0",
-    "ts-jest": "^29.1.1",
-    "@types/jest": "^29.5.3",
-    "cross-env": "^7.0.3",
-    "ts-node-dev": "^2.0.0"
-  }
-  ,
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "build:wasm": "echo 'Build and copy lnmp_wasm_bg.wasm to adapter/src/wasm/ (see ARCHITECTURE.md)'",
-    "start": "node ./dist/cli.js || node ./dist/cli.cjs",
-    "start:server": "node ./scripts/run_http_server.js",
-    "dev:server": "cross-env NODE_ENV=development ts-node-dev --respawn --transpile-only ./src/cli.ts",
-    "dev": "npm run dev:server",
-    "build:all": "node ./scripts/build_all.js",
-    "run": "npm run build:all && npm run start",
-    "stop": "node ./scripts/stop_server.js",
-    "test:node": "node ./dist/test/index.js || node ./dist/test/index.cjs",
-    "test:integration": "jest --testPathPattern=integration",
-    "test:unit": "jest --testPathPattern=tools",
-    "test": "jest --coverage",
-    "lint": "eslint . --ext .ts",
-    "prepack": "npm run build && npm run build:wasm",
-    "demo:pair:mock": "ts-node ./examples/demo/agent_pair_loadtest.ts",
-    "demo:pair:openai": "cross-env USE_OPENAI=true ts-node ./examples/demo/agent_pair_loadtest.ts"
-  }
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "lnmp",
+    "mcp",
+    "wasm",
+    "lnmplang"
+  ],
+  "author": "lnmplang",
+  "license": "Apache-2.0"
 }

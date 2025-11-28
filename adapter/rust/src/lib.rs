@@ -710,7 +710,8 @@ pub fn embedding_compute_delta(base: Vec<f32>, updated: Vec<f32>) -> Result<JsVa
         })
     }).collect();
     
-    let compression_ratio = delta.change_ratio(base_vec.dim);
+    let change_ratio = delta.change_ratio(base_vec.dim);
+    let compression_ratio = (1.0 - change_ratio).clamp(0.0, 1.0);
     
     let result = json!({
         "changes": changes,
@@ -723,7 +724,7 @@ pub fn embedding_compute_delta(base: Vec<f32>, updated: Vec<f32>) -> Result<JsVa
 
 /// Applies delta to base vector
 #[wasm_bindgen]
-pub fn embedding_apply_delta(base: Vec<f32>, delta_json: JsValue) -> Result<Vec<f32>, JsValue> {
+pub fn embedding_apply_delta(base: Vec<f64>, delta_json: JsValue) -> Result<Vec<f64>, JsValue> {
     let delta_val: JsonValue = from_value(delta_json)
         .map_err(|e| js_error("INVALID_DELTA", &format!("Invalid delta: {}", e), None))?;
     
@@ -736,13 +737,18 @@ pub fn embedding_apply_delta(base: Vec<f32>, delta_json: JsValue) -> Result<Vec<
         let index = change.get("index").and_then(|v| v.as_u64())
             .ok_or_else(|| js_error("INVALID_CHANGE", "Missing or invalid index", None))? as usize;
         let delta_val = change.get("delta").and_then(|v| v.as_f64())
-            .ok_or_else(|| js_error("INVALID_CHANGE", "Missing or invalid delta", None))? as f32;
-        
+            .ok_or_else(|| js_error("INVALID_CHANGE", "Missing or invalid delta", None))?;
+
         if index < result.len() {
             result[index] += delta_val; // Apply delta as addition
         }
     }
     
+    const PRECISION_SCALE: f64 = 1_000_000.0;
+    for val in result.iter_mut() {
+        *val = (*val * PRECISION_SCALE).round() / PRECISION_SCALE;
+    }
+
     Ok(result)
 }
 

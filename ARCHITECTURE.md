@@ -1,387 +1,55 @@
-# LNMP-MCP Adapter — Architecture and Engineering Specification.
+# LNMP MCP Architecture
 
-Version: Draft 1.0
+## Overview
 
-This document provides a full engineering specification, including a minimal TypeScript-based adapter, WASM binding guidance, MCP manifest, and CI pipeline advice.
+The LNMP MCP Adapter is designed as a **Pure Node.js** application that bridges the Model Context Protocol (MCP) with the LNMP Rust Core via WebAssembly (WASM).
 
-## Purpose
+### Design Philosophy
 
-The LNMP–MCP adapter transforms the LNMP format into MCP tools that LLMs can call. It should expose text parsing, text encoding, binary decode/encode, schema description, and a debug/explain tool so LLMs can fully understand LNMP records and leverage LNMP features (semantic checksums, nested structures, etc.).
+1. **Stability First**: Removed brittle SDK dependencies in favor of a robust, minimal JSON-RPC 2.0 implementation over Stdio.
+2. **Performance**: Core logic (parsing, encoding, compression) runs in WASM.
+3. **Simplicity**: Single entry point (`src/index.js`) handles all tool routing.
 
-## Goals & Non-Goals
-Goals:
-- Provide an easy-to-install MCP tool provider in TypeScript (Node.js/Bun/Deno).
-- Expose LNMP parsing and encoding operations in an ergonomic tool API.
-- Serve WASM bindings from Rust LNMP core for reliable parsing and binary codec handling.
-Non-Goals (Draft 1.0):
-- Implement Node native NAPI bindings (planned for v0.2).
-- Provide a full schema registry (v0.3+).
+## System Components
 
-## High-Level Architecture
-
-LLM (GPT / Claude / Gemini) → Model Context Protocol (MCP) → lnmp-mcp adapter (TS) → lnmp-core (Rust) via WASM or NAPI
-
-- The adapter is implemented in TypeScript and runs as an MCP provider.
-- The core LNMP logic and codec lives in Rust; exported via WASM for v0.1.
-- Optional NAPI for high-performance v0.2+.
-
-## Repository Layout for TypeScript Adapter (Adapter only)
-
-lnmp-mcp/
- ├── adapter/                    # TypeScript adapter package
- │    ├── package.json
- │    ├── tsconfig.json
- │    ├── src/
- │    │   ├── index.ts
- │    │   ├── server.ts
- │    │   ├── tools/
- │    │   │   ├── parse.ts
- │    │   │   ├── encode.ts
- │    │   │   ├── decodeBinary.ts
- │    │   │   ├── encodeBinary.ts
- │    │   │   ├── schemaDescribe.ts
- │    │   │   └── debugExplain.ts
- │    │   ├── bindings/
- │    │   │   └── lnmp.ts  # TypeScript wrapper around wasm-bindgen JS
- │    │   └── wasm/         # The WASM file produced by the Rust build (not checked in)
- │    │       └── lnmp_wasm_bg.wasm
- │    └── MCP.json
- ├── rust/                      # optional: rust build for WASM, only for adapter workspace
- └── ARCHITECTURE.md            # This file
-
-## MCP Tool API Design
-
-Define JSON schemas for tool inputs/outputs and follow MCP SDK conventions.
-
-### Core Tools (7 - Original)
-
-#### 1) `lnmp.parse`
-- **Input**: `{ text: string, strict?: boolean, mode?: "strict" | "lenient" }`
-- **Output**: `{ record: Record<string, number | string | boolean | string[]> }`
-- **Description**: Parse LNMP text format into structured record
-
-#### 2) `lnmp.encode`
-- **Input**: `{ record: Record<string, any> }`
-- **Output**: `{ text: string }`
-- **Description**: Encode record back to LNMP text
-
-#### 3) `lnmp.decodeBinary`
-- **Input**: `{ binary: string (base64) }`
-- **Output**: `{ text: string }`
-- **Description**: Decode binary LNMP to text
-
-#### 4) `lnmp.encodeBinary`
-- **Input**: `{ text: string, mode?: "strict" | "lenient", sanitize?: boolean }`
-- **Output**: `{ binary: string (base64) }`
-- **Description**: Encode text to binary LNMP
-
-#### 5) `lnmp.schema.describe`
-- **Input**: `{ mode?: "full" | "compact" }`
-- **Output**: `{ fields: Record<string, string> }`
-- **Description**: Get semantic dictionary schema
-
-#### 6) `lnmp.debug.explain`
-- **Input**: `{ text: string }`
-- **Output**: `{ explanation: string }`
-- **Description**: Debug explanation of record fields
-
-#### 7) `lnmp.sanitize`
-- **Input**: `{ text: string, options?: SanitizeOptions }`
-- **Output**: `{ text: string, changed: boolean }`
-- **Description**: Sanitize/normalize LNMP input
-
----
-
-### Extended Tools (9 - New from Meta Crate)
-
-#### 8) `lnmp.envelope.wrap`
-- **Input**: `{ record: object, metadata?: { timestamp?: number, source?: string, trace_id?: string, sequence?: number } }`
-- **Output**: `{ envelope: { record: object, metadata: object } }`
-- **Description**: Wrap LNMP record with operational metadata
-- **Module**: `lnmp-envelope`
-- **Use Case**: Add timestamp, source, trace ID for distributed tracing
-
-#### 9) `lnmp.network.decide`
-- **Input**: `{ message: { envelope: object, kind: "Event" | "State" | "Command" | "Query" | "Alert", priority?: number, ttl_ms?: number }, now?: number }`
-- **Output**: `{ decision: "SendToLLM" | "ProcessLocally" | "Drop" }`
-- **Description**: ECO routing policy - decides message routing
-- **Module**: `lnmp-net`
-- **Impact**: **90%+ LLM API call reduction**
-- **Algorithm**: 
-  - Expired → Drop
-  - Alert (priority > 200) → SendToLLM
-  - Events/State → importance threshold check
-  - Commands/Queries → ProcessLocally
-
-#### 10) `lnmp.network.importance`
-- **Input**: `{ message: object, now?: number }`
-- **Output**: `{ score: number (0.0-1.0) }`
-- **Description**: Compute message importance score
-- **Module**: `lnmp-net`
-- **Formula**: 50% priority + 50% SFE score
-
-#### 11) `lnmp.transport.toHttp`
-- **Input**: `{ envelope: object }`
-- **Output**: `{ headers: { "X-LNMP-Timestamp"?: string, "X-LNMP-Source"?: string, "X-LNMP-Trace-Id"?: string, "traceparent"?: string, ... } }`
-- **Description**: Convert envelope metadata to HTTP headers
-- **Module**: `lnmp-transport`
-- **Standards**: W3C Trace Context (`traceparent`), CloudEvents alignment
-
-#### 12) `lnmp.transport.fromHttp`
-- **Input**: `{ headers: object }`
-- **Output**: `{ metadata: { timestamp?: number, source?: string, trace_id?: string, ... } }`
-- **Description**: Parse HTTP headers to envelope metadata
-- **Module**: `lnmp-transport`
-
-#### 13) `lnmp.embedding.computeDelta`
-- **Input**: `{ base: number[], updated: number[] }`  // Same dimension required
-- **Output**: `{ delta: { changes: Array<{index: number, delta: number}>, compressionRatio: number, dimension: number } }`
-- **Description**: Compute vector delta for incremental embedding updates
-- **Module**: `lnmp-embedding`
-- **Compression**: **80-95% size reduction** for 1-5% changes
-- **Example**: 1536-dim vector, 1% change: 6KB → 300 bytes
-
-#### 14) `lnmp.embedding.applyDelta`
-- **Input**: `{ base: number[], delta: object }`
-- **Output**: `{ vector: number[] }`
-- **Description**: Apply delta to base vector to reconstruct updated vector
-- **Module**: `lnmp-embedding`
-
-#### 15) `lnmp.spatial.encode`
-- **Input**: `{ positions: number[], mode?: "snapshot" | "delta", previousPositions?: number[] }`
-- **Output**: `{ binary: string (base64), mode: string }`
-- **Description**: Encode 3D spatial positions with snapshot or delta compression
-- **Module**: `lnmp-spatial`
-- **Use Cases**: Robot position tracking, 3D game state, sensor arrays
-- **Modes**:
-  - **Snapshot**: Full position array (0x00 marker)
-  - **Delta**: Only changed positions (0x01 marker + index-value pairs)
-
-#### 16) `lnmp.context.score`
-- **Input**: `{ envelope: object, now?: number }`
-- **Output**: `{ scores: { freshnessScore: number, importance: number, riskLevel: string, confidence: number, compositeScore: number } }`
-- **Description**: Score envelope for LLM context window optimization
-- **Module**: `lnmp-sfe` (Semantic Field Extensions)
-- **Formula**: `compositeScore = (30% × freshness + 40% × importance + 30% × confidence) × risk_penalty`
-- **Use Case**: Select top-K freshest/most important records for LLM context
-
----
-
-## Meta Crate Architecture
-
-### Migration from Individual Crates
-
-**Before (v0.1)**:
-```rust
-// adapter/rust/Cargo.toml
-lnmp-core = { path = "../../../../crates/lnmp-core" }
-lnmp-codec = { path = "../../../../crates/lnmp-codec" }
-lnmp-sanitize = { path = "../../../../crates/lnmp-sanitize" }
+```mermaid
+graph TD
+    Client[MCP Client\n(Claude/Antigravity)] <-->|JSON-RPC Stdio| Server[Node.js Adapter\n(src/index.js)]
+    Server <-->|WASM Bindings| Core[LNMP Rust Core\n(lnmp_wasm_bg.wasm)]
+    
+    subgraph "MCP Tools"
+        Parse[lnmp_parse]
+        Encode[lnmp_encode]
+        Net[lnmp_network_*]
+        Emb[lnmp_embedding_*]
+        Etc[...]
+    end
+    
+    Server --> Parse
+    Server --> Encode
+    Server --> Net
+    Server --> Emb
 ```
 
-**After (v0.2 - Meta Crate)**:
-```rust
-// adapter/rust/Cargo.toml
-lnmp = { path = "../../../../crates/lnmp" }
+## Implementation Details
+
+### Pure Node.js Server
+- Implements `initialize`, `tools/list`, `tools/call` methods manually.
+- Handles Stdio streams using Node's `readline` module.
+- Zero external runtime dependencies (except `dotenv`).
+
+### WASM Integration
+- Loads `lnmp_wasm_bg.wasm` at startup.
+- Exposes Rust functions to JavaScript via `WebAssembly.instantiate`.
+- Fallback logic ensures server runs even if WASM fails (mock/simple implementations).
+
+## Directory Structure
+
 ```
-
-### Benefits
-1. **Single Dependency**: Access to 11 modules via one crate
-2. **Version Consistency**: All modules guaranteed compatible
-3. **Simplified Updates**: Update one dependency vs many
-4. **New Capabilities**: Instant access to envelope, net, transport, embedding, spatial, SFE modules
-
-### Module Breakdown
-
+tools/mcp/adapter/
+├── src/
+│   ├── index.js       # Main server implementation
+│   └── wasm/          # WASM binaries
+├── dist/              # Build output
+└── package.json       # Minimal config
 ```
-lnmp (meta crate)
-├── core        - Record types, field structures
-├── codec       - Text/binary parsing and encoding
-├── sanitize    - Input normalization
-├── envelope    - Operational metadata (NEW)
-├── net         - Message routing, QoS (NEW)
-├── transport   - HTTP/Kafka/gRPC bindings (NEW)
-├── embedding   - Vector delta compression (NEW)
-├── spatial     - 3D position streaming (NEW)
-├── sfe         - Context scoring (NEW)
-├── llb         - (Future: LLM blocks)
-└── quant       - (Future: Vector quantization)
-```
-
-**WASM Exports**: 13 new functions across 6 modules
-**TypeScript Tools**: 9 new tools
-**Total Tools**: **7 → 16 (229% increase)**
-
-## TypeScript Adapter Implementation
-
-Implementation notes and patterns:
-
-- Use the official MCP SDK for Node.js: `@modelcontextprotocol/sdk`.
-- Tools should declare inputSchema / outputSchema and async handlers.
-- Load WASM module at startup: `bindings/lnmp.ts` will export a `loadWasm(bytes|path)` initializer.
-- Prefer `wasm-pack` with `--target nodejs`, or `wasm-bindgen` to produce a JS glue file and .wasm file.
-- Adapter server: `src/server.ts` registers tools and runs the MCP server.
-
-The adapter exposes a deterministic WASM initialization:
-- `initLnmpWasm(options?)`: A single entrypoint to initialize the wasm module. Uses `LNMP_WASM_PATH` env var override and supports `bytes` or a `path`.
-- `lnmp.ready()`: A promise that resolves once wasm initialization completes. `server.start()` should await this to guarantee all tools are ready.
-
-This ensures robust and deterministic startup across dev, CI, and deploy environments.
-
-Example skeleton `server.ts`:
-
-```ts
-import { Server } from "@modelcontextprotocol/sdk";
-import { parseTool } from "./tools/parse";
-
-const server = new Server({ name: "lnmp-mcp", version: "0.1.0" });
-server.tool(parseTool);
-server.start();
-```
-
-### Bindings — `bindings/lnmp.ts` (Loader)
-
-- Provide a typed wrapper for all exported functions from WASM: `parse`, `encode`, `encode_binary`, `decode_binary`, `schema_describe`, `debug_explain`.
-- Expose initialization function that accepts either a file path or Buffer/ArrayBuffer so calling code can load from disk or CDN.
-
-### Tool Implementations
-
-Each tool simply calls into `bindings/lnmp` and performs input validation.
-
-Example `parse.ts`:
-
-```ts
-import { parse } from "../bindings/lnmp";
-export const parseTool: Tool = {
-  name: "lnmp.parse",
-  handler: async ({ text }) => ({ record: parse(text) })
-};
-```
-
-## WASM Build (Rust) — Guidelines
-
-- Provide a Rust crate at `rust/` that exposes the core functions via `wasm_bindgen`.
-- Build commands:
-  - `cargo build --target wasm32-unknown-unknown --release` followed by `wasm-bindgen` to produce JS glue.
-  - Alternatively use `wasm-pack build --target nodejs`.
-
-Example `lib.rs` will export parse, encode, encode_binary, decode_binary, schema_describe, debug_explain as described in the draft.
-
-## CI / Release Pipeline
-
-Suggested GitHub Actions jobs:
-- `build:rust-wasm` — Build Rust crate, run wasm-opt.
-- `build:ts` — Install Node deps, compile TypeScript.
-- `test` — Unit tests for TS and simple wasm-based tests.
-- `publish` — Publish to npm on tagged releases.
-
-## Security & Hardening
-
-- Validate input shapes against JSON Schema before passing to WASM.
-- Avoid executable code injection via record fields — treat all record field values as untrusted.
-- Use CI to scan wasm binaries and lock file checks.
-
-## Observability & Monitoring
-
-- Expose metrics (parsing latency, error rates) via Prometheus-compatible handler.
-- Add structured logs for tool calls and errors.
-
-## Roadmap (v0.1–v1.0)
-v0.1 -> WASM, basic tools, TypeScript MCP provider, sample clients.
-v0.2 -> NAPI binding, streaming updates.
-v0.3 -> Schema registry and automatic LLM correction.
-v1.0 -> Production-grade provider, binaries for multiple platforms, full SDK alignment.
-
-## Development Checklist (v0.1)
-- Add adapter TypeScript package.
-- Build basic MCP server and tool handlers that call into wasm loader.
-- Provide demos and usage README.
-- Add CI to build WASM and TypeScript.
-
-## Appendix — Example JSON Schemas for Tools
-_Included as part of the repo in `adapter/`_.
-
----
-This specification is a strongly opinionated starting point to implement the lnmp-mcp product in TypeScript while keeping the Rust LNMP core as the authoritative implementation.
-
-## Acceptance Criteria (v0.1)
-1) Tools listed in `MCP.json` are all implemented and registered in the TypeScript server.
-2) Tools behave as documented in the tool JSON schemas and return validated outputs.
-3) WASM binding loads at startup when built; if no wasm present, fallback to a safe JS parser.
-4) CI builds and tests both Rust and TypeScript components and copies artifacts where necessary.
-5) Documentation contains build and usage instructions and a demo client.
-
-## API Contract (Detailed)
-All tool handlers accept a JSON object and return a JSON object. Tools must validate inputs using the schemas in `adapter/specs/tool-schemas.json`.
-
-Examples:
-
-lnmp.parse
-Input: { "text":"F7=1\nF12=14532" }
-Output: { "record": { "7": true, "12": 14532 } }
-
-lnmp.encode
-Input: { "record": { "7": true, "12": 14532 } }
-Output: { "text": "F7=1\nF12=14532" }
-
-lnmp.encodeBinary
-Input: { "text": "F7=1\nF12=14532" }
-Output: { "binary": "<base64>" }
-
-lnmp.decodeBinary
-Input: { "binary": "<base64>" }
-Output: { "text": "F7=1\nF12=14532" }
-
-lnmp.schema.describe
-Input: { "mode": "full" }
-Output: { "fields": { "7": "boolean", "12": "int" } }
-
-lnmp.debug.explain
-Input: { "text": "F7=1 F12=14532" }
-Output: { "explanation": "F7=1    # is_active\nF12=14532    # user_id" }
-
-## Error Model & Monitoring
-- Tools should return HTTP 4xx error codes for invalid inputs, and 5xx for internal errors (WASM or code errors).
-- Wrap tool handlers with a small middleware in the MCP server to log errors and sanitize stack traces.
-- For wasm timeouts, consider a watchdog that aborts long-running JS/WASM calls.
-
-## Binary Format (Base64 Canonicalization)
-- The encodeBinary tool returns a base64-encoded representation of the binary buffer.
-- The decodeBinary tool accepts either base64 string or a raw binary buffer; the TypeScript binding will coerce base64 to a buffer.
-
-## Build & Release — Detailed Steps (CI)
-1) Build Rust WASM with `wasm-pack build --release --target nodejs`.
-2) Run wasm-opt on the output to reduce size (optional): `wasm-opt -Oz pkg/package_bg.wasm -o pkg/package_bg.wasm`.
-3) Copy the wasm and JS glue into `adapter/src/wasm/`.
-4) Run `npm ci && npm run build` in `adapter/`.
-5) Run unit tests in `adapter/`.
-6) Create npm package and publish as `@lnmplang/lnmp-mcp` on bump/tag.
-
-## Security Considerations & Policy
-- Validate all input with JSON Schema.
-- Never pass untrusted input to an eval or similar code path.
-- Strip sensitive fields from logs and disable debug explanations in production by default.
-
-## Testing & QA
-- Unit tests for JS fallback parser and tool handlers.
-- A small e2e test that builds Wasm, runs the adapter server, and calls each tool via a client (or with direct handler calls).
-- Example of edge cases: deeply nested structures, large binary data, invalid lines, additional fields.
-
-## Developer Onboarding
-To develop the TypeScript adapter locally:
-1) Install Node.js 20+, Rust toolchain and `wasm-pack`.
-2) Build the WASM: `cd adapter/rust && wasm-pack build --target nodejs`.
-3) Copy the wasm to the adapter: `cp adapter/rust/pkg/*.wasm adapter/src/wasm/`.
-4) Build and run the adapter: `cd adapter && npm install && npm run build && npm start`.
-
-## Next Steps for v0.2 and beyond
-- Add NAPI binding for performance-sensitive workloads.
-- Streaming APIs for very large LNMP messages / streaming logs.
-- Schema registry integration with MCP service so model sees accurate schemas.
-
----
-If you'd like, I can:
-- Add TypeScript unit tests that validate each tool's schema conformance.
-- Add gh actions job to publish artifacts or to tag releases.
-- Add additional sample MCP client to demonstrate how an LLM calls the tool.
-
