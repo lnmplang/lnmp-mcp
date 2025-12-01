@@ -1,0 +1,50 @@
+name: MCP Server Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'tools/mcp/**'
+      - 'crates/lnmp/**'
+      - '.github/workflows/mcp-test.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tools/mcp/**'
+      - 'crates/lnmp/**'
+
+jobs:
+  test:
+    name: MCP Server Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      
+      - name: Build WASM
+        run: |
+          cd crates/lnmp
+          wasm-pack build --target nodejs --features wasm \
+            --out-dir ../../tools/mcp/wasm
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install MCP dependencies
+        working-directory: tools/mcp
+        run: npm install
+      
+      - name: Build MCP server
+        working-directory: tools/mcp
+        run: npm run build
+      
+      - name: Run MCP tests
+        working-directory: tools/mcp
+        run: npm test
