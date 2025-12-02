@@ -20,9 +20,7 @@ use lnmp::embedding::{VectorDelta, Vector};
 use lnmp::spatial::protocol::{SpatialFrame, SpatialStreamer};
 use lnmp::sfe::{ContextScorer, ContextScorerConfig};
 
-use serde_yaml;
-// Include the example semantic dictionary at compile time to return authoritative schema info
-const EXAMPLE_SEMANTIC_DICTIONARY_YAML: &str = include_str!("../../../../../examples/examples/semantic_dictionary.yaml");
+// Removed: semantic_dictionary.yaml dependency (file was removed with examples reorganization)
 
 /// Convert LnmpRecord into serde_json::Value object for wasm
 fn record_to_json(record: &LnmpRecord) -> JsonValue {
@@ -343,19 +341,16 @@ pub fn decode_binary(bin: &[u8]) -> Result<String, JsValue> {
 
 #[wasm_bindgen]
 pub fn schema_describe(_mode: &str) -> Result<JsValue, JsValue> {
-    // Try to load the example semantic dictionary (embedded at compile-time) and return it
-    // as JSON. If parsing fails, fall back to the minimal mapping.
-    match serde_yaml::from_str::<serde_json::Value>(EXAMPLE_SEMANTIC_DICTIONARY_YAML) {
-        Ok(y) => to_value(&y).map_err(|e| JsValue::from_str(&e.to_string())),
-        Err(_) => {
-            let mut map = std::collections::BTreeMap::new();
-            map.insert("7".to_string(), "boolean".to_string());
-            map.insert("12".to_string(), "int".to_string());
-            let mut wrapper = std::collections::BTreeMap::new();
-            wrapper.insert("fields".to_string(), serde_json::to_value(map).unwrap_or(JsonValue::Null));
-            to_value(&wrapper).map_err(|e| JsValue::from_str(&e.to_string()))
-        }
-    }
+    // Returns a minimal schema mapping (semantic_dictionary.yaml was removed with examples reorganization)
+    // This is sufficient for basic MCP schema introspection
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("7".to_string(), "boolean".to_string());
+    map.insert("12".to_string(), "int".to_string());
+    map.insert("20".to_string(), "string".to_string());
+    map.insert("23".to_string(), "string_array".to_string());
+    let mut wrapper = std::collections::BTreeMap::new();
+    wrapper.insert("fields".to_string(), serde_json::to_value(map).unwrap_or(JsonValue::Null));
+    to_value(&wrapper).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[wasm_bindgen]
